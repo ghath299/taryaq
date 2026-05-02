@@ -18,3 +18,33 @@ id = "PoDrAtdHNd2wxzYeakbHG"
 uri = "file://artifacts/mobile/assets/images/empty-bookings.png"
 type = "image"
 title = "empty bookings state"
+
+[[generated]]
+id = "DTwsMMg5fCsVnP22lA96I"
+uri = "file://artifacts/mobile/assets/images/banner-phone.png"
+type = "image"
+title = "phone with stethoscope"
+
+[[generated]]
+id = "8NtMNuJsCkXeSY1hO718P"
+uri = "file://artifacts/mobile/assets/images/doctor-sara.png"
+type = "image"
+title = "female pediatrician hijab"
+
+[[generated]]
+id = "iz2exFlOkud7ffeJwgpec"
+uri = "file://artifacts/mobile/assets/images/doctor-ahmed.png"
+type = "image"
+title = "male doctor glasses"
+
+[[generated]]
+id = "ECOAUyxYEl2GG_74KnzIg"
+uri = "file://artifacts/mobile/assets/images/doctor-ali.png"
+type = "image"
+title = "male cardiologist scrubs"
+
+[[generated]]
+id = "5jHjNy0fyXf2a_mTTRZq-"
+uri = "file://artifacts/mobile/assets/images/health-shield.png"
+type = "image"
+title = "health shield 3d"

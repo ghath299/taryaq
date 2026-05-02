@@ -42,6 +42,9 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `GET /api/users/role/:phone` — returns user role (patient/doctor/pharmacist)
 - `GET /api/healthz` — health check
 - `TELEGRAM_BOT_TOKEN` env var required for real delivery; falls back to console logging
+- **Master test credentials** (single bypass phone for QA):
+  - phone `07700000000` + OTP `123456` skips Telegram and rate limit
+  - Override via env vars `MASTER_PHONE` and `MASTER_OTP`
 
 ### App Screens / Navigation
 
@@ -54,7 +57,7 @@ app/
     location.tsx         — Location permission (then sends OTP)
     otp.tsx              — 6-digit OTP verification
   (tabs)/
-    index.tsx            — Home: promo slides, quick actions, doctors, health tips
+    index.tsx            — Home: header (bell+badge, greeting, gradient avatar), search bar, blue→cyan hero banner with phone+stethoscope image, 4 quick services (تصوير وصفة / أقرب صيدلية / البحث عن دواء / حجز طبيب), 3 featured doctor cards with real photos, "حالتك اليوم" health metrics card, "نصيحة اليوم" tip card, floating "استشارة" FAB
     doctors.tsx          — Doctors list with search + specialty/province filters
     medicines.tsx        — Coming soon placeholder
     pharmacies.tsx       — Coming soon placeholder

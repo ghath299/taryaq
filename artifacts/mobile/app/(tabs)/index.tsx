@@ -1,68 +1,71 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   View,
   ScrollView,
   StyleSheet,
   Pressable,
-  FlatList,
-  Dimensions,
+  Image,
+  TextInput,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  withRepeat,
-  withSequence,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeInUp } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
-import { AnimatedCard } from "@/components/AnimatedCard";
 import EmergencyModal from "@/components/EmergencyModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
-import { useApp } from "@/contexts/AppContext";
-import { doctors } from "@/data/mockData";
+import { doctors as mockDoctors } from "@/data/mockData";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 
-const { width: SCREEN_W } = Dimensions.get("window");
+const BRAND_BLUE = "#1F40C8";
+const BRAND_CYAN = "#5EDFFF";
+const BRAND_PURPLE = "#8B7CF6";
 
-const promoSlides = [
-  {
-    id: "1",
-    titleAr: "احجز موعدك بسهولة",
-    descAr: "أكثر من 500 طبيب متاح في جميع محافظات العراق",
-    gradient: ["#5EDFFF", "#1F6AE1"] as [string, string],
-    icon: "calendar" as const,
-  },
-  {
-    id: "2",
-    titleAr: "أطباء موثوقون",
-    descAr: "جميع الأطباء معتمدون ومرخصون من وزارة الصحة",
-    gradient: ["#1F6AE1", "#0D4B99"] as [string, string],
-    icon: "shield" as const,
-  },
-  {
-    id: "3",
-    titleAr: "تذكيرات فورية",
-    descAr: "نرسل لك تذكيراً قبل موعدك لتكون جاهزاً",
-    gradient: ["#0D4B99", "#5EDFFF"] as [string, string],
-    icon: "bell" as const,
-  },
-];
+const doctorImages: Record<string, ReturnType<typeof require>> = {
+  "1": require("@/assets/images/doctor-ahmed.png"),
+  "2": require("@/assets/images/doctor-sara.png"),
+  "5": require("@/assets/images/doctor-ali.png"),
+};
 
-const healthTips = [
-  { id: "1", icon: "droplet" as const, titleAr: "اشرب الماء", descAr: "8 أكواب يومياً تحسّن وظائف الكلى وتطرد السموم", color: "#5EDFFF" },
-  { id: "2", icon: "wind" as const, titleAr: "التنفس العميق", descAr: "5 دقائق صباحاً تقلل التوتر وتحسّن التركيز", color: "#1F6AE1" },
-  { id: "3", icon: "sun" as const, titleAr: "فيتامين D", descAr: "15 دقيقة في الشمس يومياً تعزز المناعة", color: "#FFCC00" },
-  { id: "4", icon: "activity" as const, titleAr: "المشي اليومي", descAr: "30 دقيقة مشي تحرق السعرات وتصفي الذهن", color: "#4CD964" },
+const featuredDoctorIds = ["2", "1", "5"];
+
+const quickServices = [
+  {
+    id: "prescription",
+    labelAr: "تصوير وصفة",
+    icon: "camera" as const,
+    iconLib: "feather" as const,
+    color: BRAND_CYAN,
+    route: "/search" as const,
+  },
+  {
+    id: "pharmacy",
+    labelAr: "أقرب صيدلية",
+    icon: "map-pin" as const,
+    iconLib: "feather" as const,
+    color: BRAND_BLUE,
+    route: "/(tabs)/pharmacies" as const,
+  },
+  {
+    id: "medicine",
+    labelAr: "البحث عن دواء",
+    icon: "pill" as const,
+    iconLib: "mci" as const,
+    color: BRAND_PURPLE,
+    route: "/search" as const,
+  },
+  {
+    id: "doctor",
+    labelAr: "حجز طبيب",
+    icon: "stethoscope" as const,
+    iconLib: "mci" as const,
+    color: BRAND_CYAN,
+    route: "/(tabs)/doctors" as const,
+  },
 ];
 
 export default function HomeScreen() {
@@ -70,238 +73,782 @@ export default function HomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  const { t } = useApp();
   const router = useRouter();
-  const [currentSlide, setCurrentSlide] = useState(0);
   const [emergencyVisible, setEmergencyVisible] = useState(false);
-  const slideRef = useRef<FlatList>(null);
-  const slideTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [searchValue, setSearchValue] = useState("");
 
-  const pulseValue = useSharedValue(1);
-  useEffect(() => {
-    pulseValue.value = withRepeat(
-      withSequence(withTiming(1.06, { duration: 1400 }), withTiming(1, { duration: 1400 })),
-      -1,
-      true
-    );
-  }, []);
-  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulseValue.value }] }));
+  const firstName = user?.fullName?.split(" ")[0] ?? "صديقي";
+  const cardBg = isDark ? theme.card : "#FFFFFF";
+  const screenBg = isDark ? theme.backgroundRoot : "#F5F7FB";
+  const subtleBorder = isDark ? addAlpha("#FFFFFF", 0.06) : addAlpha("#0A0F1A", 0.04);
 
-  useEffect(() => {
-    slideTimer.current = setInterval(() => {
-      setCurrentSlide((prev) => {
-        const next = (prev + 1) % promoSlides.length;
-        try { slideRef.current?.scrollToIndex({ index: next, animated: true }); } catch {}
-        return next;
-      });
-    }, 3500);
-    return () => { if (slideTimer.current) clearInterval(slideTimer.current); };
-  }, []);
+  const featuredDoctors = featuredDoctorIds
+    .map((id) => mockDoctors.find((d) => d.id === id))
+    .filter(Boolean) as typeof mockDoctors;
 
-  const firstName = user?.fullName?.split(" ")[0] ?? "مريض";
-
-  const quickActions = [
-    { id: "bookings", icon: "calendar" as const, labelAr: "حجوزاتي", color: theme.primary, onPress: () => router.push("/bookings") },
-    { id: "search", icon: "search" as const, labelAr: "بحث", color: theme.primaryDark, onPress: () => router.push("/search") },
-    { id: "emergency", icon: "alert-triangle" as const, labelAr: "طوارئ", color: "#FF4B4B", onPress: () => setEmergencyVisible(true) },
-    { id: "career", icon: "briefcase" as const, labelAr: "انضم", color: "#4CD964", onPress: () => router.push("/career-join") },
-  ];
-
-  const renderPromoSlide = ({ item }: { item: typeof promoSlides[0] }) => (
-    <LinearGradient
-      colors={item.gradient}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.promoSlide, { width: SCREEN_W - Spacing.xl * 2 }]}
-    >
-      <View style={styles.promoContent}>
-        <View style={styles.promoTextArea}>
-          <ThemedText type="h3" style={styles.promoTitle}>{item.titleAr}</ThemedText>
-          <ThemedText type="small" style={styles.promoDesc}>{item.descAr}</ThemedText>
-        </View>
-        <View style={[styles.promoIconWrap, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
-          <Feather name={item.icon} size={36} color="#FFF" />
-        </View>
-      </View>
-      <View style={styles.promoDots}>
-        {promoSlides.map((_, idx) => (
-          <View key={idx} style={[styles.dot, { backgroundColor: idx === currentSlide ? "#FFF" : "rgba(255,255,255,0.4)", width: idx === currentSlide ? 20 : 6 }]} />
-        ))}
-      </View>
-    </LinearGradient>
-  );
-
-  const renderDoctor = useCallback(({ item, index }: { item: typeof doctors[0]; index: number }) => (
-    <AnimatedCard
-      index={index}
-      onPress={() => router.push(`/doctor/${item.id}`)}
-      style={[styles.doctorCard, { width: 155 }]}
-    >
-      <View style={styles.doctorCardInner}>
-        <View style={[styles.doctorAvatar, { backgroundColor: addAlpha(theme.primary, 0.08) }]}>
-          <Feather name="user" size={30} color={theme.primary} />
-          {item.isVerified && (
-            <View style={[styles.verifiedBadge, { backgroundColor: theme.primary }]}>
-              <Feather name="check" size={8} color="#FFF" />
-            </View>
-          )}
-        </View>
-        <ThemedText type="small" style={styles.doctorName} numberOfLines={2}>{item.nameAr}</ThemedText>
-        <ThemedText type="caption" style={[styles.doctorSpec, { color: theme.primary }]} numberOfLines={1}>{item.specialtyAr}</ThemedText>
-        <View style={styles.ratingRow}>
-          <Feather name="star" size={11} color="#FFCC00" />
-          <ThemedText type="caption" style={{ color: theme.textSecondary, marginRight: 2 }}>{item.rating}</ThemedText>
-        </View>
-        <View style={[styles.bookChip, { backgroundColor: theme.primary }]}>
-          <ThemedText type="caption" style={{ color: isDark ? "#000" : "#FFF", fontWeight: "700" }}>احجز</ThemedText>
-        </View>
-      </View>
-    </AnimatedCard>
-  ), [theme, isDark, router]);
+  const renderQuickIcon = (svc: (typeof quickServices)[number]) => {
+    if (svc.iconLib === "mci") {
+      return (
+        <MaterialCommunityIcons
+          name={svc.icon as "pill" | "stethoscope"}
+          size={26}
+          color={svc.color}
+        />
+      );
+    }
+    return <Feather name={svc.icon as "camera" | "map-pin"} size={24} color={svc.color} />;
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+    <View style={{ flex: 1, backgroundColor: screenBg }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
       >
-        <Animated.View entering={FadeIn.duration(300)} style={[styles.headerSection, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }]}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerLeft}>
-              <Animated.View style={pulseStyle}>
-                <Pressable onPress={() => setEmergencyVisible(true)} style={[styles.emergencyBtn, { backgroundColor: addAlpha("#FF4B4B", 0.12), borderColor: addAlpha("#FF4B4B", 0.25) }]}>
-                  <Feather name="alert-triangle" size={20} color="#FF4B4B" />
-                </Pressable>
-              </Animated.View>
-              <Pressable onPress={() => router.push("/notifications")} style={[styles.notifBtn, { backgroundColor: addAlpha(theme.primary, 0.1) }]}>
-                <Feather name="bell" size={20} color={theme.primary} />
-                <View style={[styles.notifBadge, { backgroundColor: "#FF4B4B" }]}>
-                  <ThemedText type="caption" style={{ color: "#FFF", fontSize: 9, fontWeight: "700" }}>3</ThemedText>
-                </View>
+        {/* HEADER */}
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={[
+            styles.header,
+            { paddingTop: Platform.OS === "web" ? 24 : insets.top + 8 },
+          ]}
+        >
+          <Pressable
+            onPress={() => router.push("/notifications")}
+            style={[styles.bellBtn, { backgroundColor: cardBg, borderColor: subtleBorder }]}
+          >
+            <Feather name="bell" size={20} color={theme.text} />
+            <View style={styles.bellBadge}>
+              <ThemedText
+                type="caption"
+                style={{ color: "#FFF", fontSize: 10, fontWeight: "800", lineHeight: 12 }}
+              >
+                3
+              </ThemedText>
+            </View>
+          </Pressable>
+
+          <View style={styles.greetingArea}>
+            <View style={styles.greetingTopRow}>
+              <ThemedText type="h3" style={[styles.greetingHello, { color: theme.text }]}>
+                أهلاً {firstName}
+              </ThemedText>
+              <ThemedText type="h3" style={styles.wave}>
+                👋
+              </ThemedText>
+            </View>
+            <Pressable
+              onPress={() => router.push("/(tabs)/doctors" as const)}
+              style={styles.greetingSubRow}
+            >
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                كيف صحتك اليوم؟
+              </ThemedText>
+              <Feather
+                name="chevron-left"
+                size={14}
+                color={theme.textSecondary}
+                style={{ marginRight: 2 }}
+              />
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={() => router.push("/bookings")}
+            style={styles.avatarWrap}
+          >
+            <LinearGradient
+              colors={[BRAND_BLUE, BRAND_CYAN]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarRing}
+            >
+              <View style={[styles.avatarInner, { backgroundColor: cardBg }]}>
+                <ThemedText
+                  type="h3"
+                  style={{ color: BRAND_BLUE, fontWeight: "800" }}
+                >
+                  {firstName.charAt(0)}
+                </ThemedText>
+              </View>
+            </LinearGradient>
+          </Pressable>
+        </Animated.View>
+
+        {/* SEARCH BAR */}
+        <Animated.View
+          entering={FadeInDown.delay(80).duration(400)}
+          style={styles.searchSection}
+        >
+          <Pressable
+            style={[styles.cameraBtn, { backgroundColor: cardBg, borderColor: subtleBorder }]}
+            onPress={() => router.push("/search")}
+          >
+            <Feather name="camera" size={20} color={theme.text} />
+          </Pressable>
+          <Pressable
+            style={[
+              styles.searchBar,
+              { backgroundColor: cardBg, borderColor: subtleBorder },
+            ]}
+            onPress={() => router.push("/search")}
+          >
+            <Feather name="search" size={18} color={theme.textSecondary} />
+            <TextInput
+              value={searchValue}
+              onChangeText={setSearchValue}
+              placeholder="ابحث عن طبيب، دواء، أو صيدلية..."
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.searchInput, { color: theme.text }]}
+              onFocus={() => router.push("/search")}
+              showSoftInputOnFocus={false}
+            />
+          </Pressable>
+        </Animated.View>
+
+        {/* HERO BANNER */}
+        <Animated.View
+          entering={FadeInDown.delay(150).duration(450)}
+          style={styles.bannerWrap}
+        >
+          <LinearGradient
+            colors={[BRAND_BLUE, "#3A6BE5", BRAND_CYAN]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.banner}
+          >
+            <View style={styles.bannerTextCol}>
+              <ThemedText type="h2" style={styles.bannerTitle}>
+                احجز طبيبك خلال{"\n"}ثواني
+              </ThemedText>
+              <ThemedText type="small" style={styles.bannerSubtitle}>
+                أو ابحث عن دواء قريب منك
+              </ThemedText>
+              <Pressable
+                onPress={() => router.push("/(tabs)/doctors" as const)}
+                style={styles.bannerCta}
+              >
+                <Feather name="chevron-left" size={16} color={BRAND_BLUE} />
+                <ThemedText type="small" style={styles.bannerCtaText}>
+                  ابدأ الآن
+                </ThemedText>
               </Pressable>
             </View>
-            <View style={styles.greetingArea}>
-              <ThemedText type="small" style={[styles.greetingLabel, { color: theme.textSecondary }]}>أهلاً 👋</ThemedText>
-              <ThemedText type="h2" style={[styles.greetingName, { color: theme.text }]}>{firstName}</ThemedText>
+            <View style={styles.bannerImageCol}>
+              <Image
+                source={require("@/assets/images/banner-phone.png")}
+                style={styles.bannerImage}
+                resizeMode="contain"
+              />
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* QUICK SERVICES */}
+        <Animated.View
+          entering={FadeInUp.delay(220).duration(400)}
+          style={styles.quickRow}
+        >
+          {quickServices.map((svc, i) => (
+            <Animated.View
+              key={svc.id}
+              entering={FadeInUp.delay(260 + i * 60).duration(350)}
+              style={{ flex: 1 }}
+            >
+              <Pressable
+                onPress={() => router.push(svc.route as never)}
+                style={[
+                  styles.quickItem,
+                  { backgroundColor: cardBg, borderColor: subtleBorder },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.quickIconBg,
+                    { backgroundColor: addAlpha(svc.color, 0.12) },
+                  ]}
+                >
+                  {renderQuickIcon(svc)}
+                </View>
+                <ThemedText
+                  type="caption"
+                  style={[styles.quickLabel, { color: theme.text }]}
+                  numberOfLines={1}
+                >
+                  {svc.labelAr}
+                </ThemedText>
+              </Pressable>
+            </Animated.View>
+          ))}
+        </Animated.View>
+
+        {/* FEATURED DOCTORS */}
+        <Animated.View
+          entering={FadeInUp.delay(380).duration(400)}
+          style={styles.section}
+        >
+          <View style={styles.sectionHeader}>
+            <Pressable
+              onPress={() => router.push("/(tabs)/doctors" as const)}
+              style={styles.viewAllBtn}
+            >
+              <Feather name="chevron-left" size={14} color={BRAND_BLUE} />
+              <ThemedText type="small" style={{ color: BRAND_BLUE, fontWeight: "600" }}>
+                عرض الكل
+              </ThemedText>
+            </Pressable>
+            <ThemedText type="h4" style={[styles.sectionTitle, { color: theme.text }]}>
+              أطباء مميزون
+            </ThemedText>
+          </View>
+
+          <View style={styles.doctorsRow}>
+            {featuredDoctors.map((doc, i) => (
+              <Animated.View
+                key={doc.id}
+                entering={FadeInUp.delay(440 + i * 80).duration(400)}
+                style={{ flex: 1 }}
+              >
+                <Pressable
+                  onPress={() => router.push(`/doctor/${doc.id}` as never)}
+                  style={[
+                    styles.doctorCard,
+                    { backgroundColor: cardBg, borderColor: subtleBorder },
+                  ]}
+                >
+                  <Image
+                    source={doctorImages[doc.id] ?? require("@/assets/images/doctor-ahmed.png")}
+                    style={styles.doctorPhoto}
+                  />
+                  <ThemedText
+                    type="small"
+                    style={[styles.doctorName, { color: theme.text }]}
+                    numberOfLines={1}
+                  >
+                    {doc.nameAr}
+                  </ThemedText>
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.textSecondary, textAlign: "center" }}
+                    numberOfLines={1}
+                  >
+                    {doc.specialtyAr}
+                  </ThemedText>
+                  <View style={styles.ratingRow}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.text, fontWeight: "700", marginRight: 3 }}
+                    >
+                      {doc.rating}
+                    </ThemedText>
+                    <Ionicons name="star" size={11} color="#FFB800" />
+                  </View>
+                  <Pressable
+                    onPress={() => router.push(`/doctor/${doc.id}` as never)}
+                    style={[styles.bookBtn, { borderColor: addAlpha(BRAND_BLUE, 0.3) }]}
+                  >
+                    <Feather name="chevron-left" size={12} color={BRAND_BLUE} />
+                    <ThemedText
+                      type="caption"
+                      style={{ color: BRAND_BLUE, fontWeight: "600" }}
+                    >
+                      احجز الآن
+                    </ThemedText>
+                  </Pressable>
+                </Pressable>
+              </Animated.View>
+            ))}
+          </View>
+        </Animated.View>
+
+        {/* HEALTH STATUS CARD */}
+        <Animated.View
+          entering={FadeInUp.delay(560).duration(400)}
+          style={styles.section}
+        >
+          <View
+            style={[
+              styles.healthCard,
+              { backgroundColor: cardBg, borderColor: subtleBorder },
+            ]}
+          >
+            <View style={styles.healthHeader}>
+              <Feather name="heart" size={16} color={BRAND_BLUE} />
+              <ThemedText
+                type="small"
+                style={{ color: theme.text, fontWeight: "700", marginRight: 6 }}
+              >
+                حالتك اليوم
+              </ThemedText>
+            </View>
+
+            <View style={styles.healthBody}>
+              <View style={styles.healthShieldCol}>
+                <Image
+                  source={require("@/assets/images/health-shield.png")}
+                  style={styles.healthShield}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <View style={styles.healthMetric}>
+                <Feather name="droplet" size={14} color={theme.textSecondary} />
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.textSecondary, marginTop: 4 }}
+                >
+                  النشاط
+                </ThemedText>
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.text, fontWeight: "700", marginTop: 2 }}
+                >
+                  متوسط
+                </ThemedText>
+                <View style={styles.healthBar}>
+                  <View
+                    style={[
+                      styles.healthBarFill,
+                      { backgroundColor: BRAND_BLUE, width: "55%" },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.healthMetric}>
+                <Feather name="droplet" size={14} color={theme.textSecondary} />
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.textSecondary, marginTop: 4 }}
+                >
+                  ضغط الدم
+                </ThemedText>
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.text, fontWeight: "700", marginTop: 2 }}
+                >
+                  120/80
+                </ThemedText>
+                <ThemedText
+                  type="caption"
+                  style={{ color: "#22C55E", marginTop: 2, fontWeight: "600" }}
+                >
+                  طبيعي
+                </ThemedText>
+              </View>
+
+              <View style={styles.healthMetric}>
+                <Feather name="heart" size={14} color={theme.textSecondary} />
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.textSecondary, marginTop: 4 }}
+                >
+                  نبض القلب
+                </ThemedText>
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.text, fontWeight: "700", marginTop: 2 }}
+                >
+                  72
+                </ThemedText>
+                <ThemedText
+                  type="caption"
+                  style={{ color: "#22C55E", marginTop: 2, fontWeight: "600" }}
+                >
+                  طبيعي
+                </ThemedText>
+              </View>
             </View>
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.slidesSection}>
-          <FlatList
-            ref={slideRef}
-            data={promoSlides}
-            renderItem={renderPromoSlide}
-            keyExtractor={(item) => item.id}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: Spacing.xl }}
-            scrollEnabled={false}
-          />
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(200).duration(400)} style={styles.quickActionsSection}>
-          <ThemedText type="h4" style={styles.sectionTitle}>الخدمات السريعة</ThemedText>
-          <View style={styles.quickGrid}>
-            {quickActions.map((action, i) => (
-              <Animated.View key={action.id} entering={FadeInUp.delay(250 + i * 60).duration(350)}>
-                <Pressable
-                  onPress={action.onPress}
-                  style={[styles.quickItem, { backgroundColor: isDark ? theme.card : "#FFF" }]}
+        {/* TIP OF THE DAY */}
+        <Animated.View
+          entering={FadeInUp.delay(660).duration(400)}
+          style={styles.section}
+        >
+          <View
+            style={[
+              styles.tipCard,
+              { backgroundColor: cardBg, borderColor: subtleBorder },
+            ]}
+          >
+            <View style={styles.tipIconWrap}>
+              <MaterialCommunityIcons name="cup-water" size={32} color={BRAND_CYAN} />
+            </View>
+            <View style={styles.tipTextCol}>
+              <View style={styles.tipHeader}>
+                <Feather name="zap" size={14} color="#FFB800" />
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.text, fontWeight: "700", marginRight: 6 }}
                 >
-                  <LinearGradient
-                    colors={[addAlpha(action.color, 0.15), addAlpha(action.color, 0.06)]}
-                    style={[styles.quickIcon, { borderColor: addAlpha(action.color, 0.2) }]}
-                  >
-                    <Feather name={action.icon} size={24} color={action.color} />
-                  </LinearGradient>
-                  <ThemedText type="caption" style={[styles.quickLabel, { color: theme.text }]}>{action.labelAr}</ThemedText>
-                </Pressable>
-              </Animated.View>
-            ))}
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(350).duration(400)} style={styles.promotedSection}>
-          <View style={styles.sectionHeader}>
-            <Pressable onPress={() => router.push("/(tabs)/doctors" as any)}>
-              <ThemedText type="small" style={{ color: theme.primary }}>عرض الكل</ThemedText>
-            </Pressable>
-            <ThemedText type="h4" style={styles.sectionTitle}>{t("promotedDoctors")}</ThemedText>
-          </View>
-          <FlatList
-            data={doctors.slice(0, 5)}
-            renderItem={renderDoctor}
-            keyExtractor={(item) => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: Spacing.xl, gap: Spacing.md }}
-            scrollEnabled={!!(doctors.length)}
-          />
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(450).duration(400)} style={[styles.tipsSection, { paddingHorizontal: Spacing.xl }]}>
-          <ThemedText type="h4" style={[styles.sectionTitle, { marginBottom: Spacing.md }]}>{t("healthTips")}</ThemedText>
-          <View style={styles.tipsGrid}>
-            {healthTips.map((tip, i) => (
-              <Animated.View key={tip.id} entering={FadeInUp.delay(500 + i * 80).duration(350)}>
-                <Pressable style={[styles.tipCard, { backgroundColor: isDark ? theme.card : "#FFF" }]}>
-                  <View style={[styles.tipIcon, { backgroundColor: addAlpha(tip.color, 0.12) }]}>
-                    <Feather name={tip.icon} size={20} color={tip.color} />
-                  </View>
-                  <ThemedText type="small" style={[styles.tipTitle, { color: theme.text }]}>{tip.titleAr}</ThemedText>
-                  <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right", lineHeight: 18 }} numberOfLines={2}>{tip.descAr}</ThemedText>
-                </Pressable>
-              </Animated.View>
-            ))}
+                  نصيحة اليوم
+                </ThemedText>
+              </View>
+              <ThemedText
+                type="caption"
+                style={{
+                  color: theme.textSecondary,
+                  textAlign: "right",
+                  lineHeight: 18,
+                  marginTop: 4,
+                }}
+              >
+                شرب الماء بانتظام يساعد على تحسين نشاطك وصحتك العامة
+              </ThemedText>
+            </View>
           </View>
         </Animated.View>
       </ScrollView>
 
-      <EmergencyModal visible={emergencyVisible} onClose={() => setEmergencyVisible(false)} />
+      {/* FLOATING CONSULT BUTTON */}
+      <Pressable
+        onPress={() => setEmergencyVisible(true)}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: BRAND_BLUE,
+            bottom: tabBarHeight + 16,
+          },
+        ]}
+      >
+        <Feather name="message-circle" size={18} color="#FFF" />
+        <ThemedText
+          type="caption"
+          style={{ color: "#FFF", fontWeight: "700", marginRight: 6 }}
+        >
+          استشارة
+        </ThemedText>
+      </Pressable>
+
+      <EmergencyModal
+        visible={emergencyVisible}
+        onClose={() => setEmergencyVisible(false)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerSection: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.lg },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
-  emergencyBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  notifBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  notifBadge: { position: "absolute", top: 6, right: 6, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  greetingArea: { alignItems: "flex-end" },
-  greetingLabel: { marginBottom: 2 },
-  greetingName: { fontWeight: "800" },
-  slidesSection: { marginBottom: Spacing.xl },
-  promoSlide: { borderRadius: BorderRadius.xl, padding: Spacing["2xl"] },
-  promoContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: Spacing.lg },
-  promoTextArea: { flex: 1, marginLeft: Spacing.lg },
-  promoTitle: { color: "#FFF", fontWeight: "800", marginBottom: 4 },
-  promoDesc: { color: "rgba(255,255,255,0.85)", lineHeight: 20 },
-  promoIconWrap: { width: 70, height: 70, borderRadius: 24, alignItems: "center", justifyContent: "center" },
-  promoDots: { flexDirection: "row", justifyContent: "flex-end", gap: 4, alignItems: "center" },
-  dot: { height: 6, borderRadius: 3 },
-  quickActionsSection: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
-  sectionTitle: { textAlign: "right", fontWeight: "700", marginBottom: Spacing.md },
-  quickGrid: { flexDirection: "row", justifyContent: "space-between", gap: Spacing.sm },
-  quickItem: { flex: 1, alignItems: "center", borderRadius: BorderRadius.lg, padding: Spacing.md, gap: Spacing.sm },
-  quickIcon: { width: 54, height: 54, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  quickLabel: { fontWeight: "600", textAlign: "center", fontSize: 12 },
-  promotedSection: { marginBottom: Spacing.xl },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: Spacing.xl, marginBottom: Spacing.md },
-  doctorCard: { marginVertical: 4 },
-  doctorCardInner: { padding: Spacing.md, alignItems: "center", gap: 6 },
-  doctorAvatar: { width: 65, height: 65, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-  verifiedBadge: { position: "absolute", bottom: 2, right: 2, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  doctorName: { textAlign: "center", fontWeight: "600", lineHeight: 18 },
-  doctorSpec: { textAlign: "center" },
-  ratingRow: { flexDirection: "row", alignItems: "center" },
-  bookChip: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: 12 },
-  tipsSection: { marginBottom: Spacing.lg },
-  tipsGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.md },
-  tipCard: { width: (SCREEN_W - Spacing.xl * 2 - Spacing.md) / 2, borderRadius: BorderRadius.lg, padding: Spacing.md, gap: 6 },
-  tipIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  tipTitle: { fontWeight: "700", textAlign: "right" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.lg,
+  },
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  bellBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: "#FF3B30",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFF",
+  },
+  greetingArea: {
+    flex: 1,
+    alignItems: "flex-end",
+    marginHorizontal: Spacing.md,
+  },
+  greetingTopRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+  },
+  greetingHello: {
+    fontWeight: "800",
+  },
+  wave: {
+    fontSize: 22,
+  },
+  greetingSubRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  avatarWrap: {},
+  avatarRing: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    padding: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInner: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  searchSection: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  cameraBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  searchBar: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    paddingHorizontal: Spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    textAlign: "right",
+    fontSize: 14,
+    padding: 0,
+    height: "100%",
+  },
+
+  bannerWrap: {
+    paddingHorizontal: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
+  banner: {
+    borderRadius: 24,
+    padding: Spacing.xl,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    minHeight: 170,
+    overflow: "hidden",
+  },
+  bannerTextCol: {
+    flex: 1.4,
+    alignItems: "flex-end",
+  },
+  bannerTitle: {
+    color: "#FFF",
+    fontWeight: "800",
+    textAlign: "right",
+    lineHeight: 28,
+    marginBottom: 6,
+  },
+  bannerSubtitle: {
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "right",
+    marginBottom: 14,
+  },
+  bannerCta: {
+    backgroundColor: "#FFF",
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 4,
+  },
+  bannerCtaText: {
+    color: BRAND_BLUE,
+    fontWeight: "700",
+  },
+  bannerImageCol: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerImage: {
+    width: 120,
+    height: 140,
+  },
+
+  quickRow: {
+    flexDirection: "row-reverse",
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  quickItem: {
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: 4,
+    borderRadius: 18,
+    gap: 8,
+    borderWidth: 1,
+  },
+  quickIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickLabel: {
+    fontWeight: "600",
+    textAlign: "center",
+    fontSize: 11,
+  },
+
+  section: {
+    paddingHorizontal: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  sectionTitle: {
+    fontWeight: "800",
+  },
+  viewAllBtn: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 2,
+  },
+
+  doctorsRow: {
+    flexDirection: "row-reverse",
+    gap: Spacing.sm,
+  },
+  doctorCard: {
+    borderRadius: 18,
+    padding: Spacing.sm,
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+  },
+  doctorPhoto: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 14,
+    marginBottom: 6,
+  },
+  doctorName: {
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  ratingRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  bookBtn: {
+    marginTop: 8,
+    width: "100%",
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+
+  healthCard: {
+    borderRadius: 20,
+    padding: Spacing.lg,
+    borderWidth: 1,
+  },
+  healthHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  healthBody: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 8,
+  },
+  healthShieldCol: {
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 4,
+  },
+  healthShield: {
+    width: 60,
+    height: 60,
+  },
+  healthMetric: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  healthBar: {
+    marginTop: 6,
+    width: "80%",
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: addAlpha(BRAND_BLUE, 0.12),
+    overflow: "hidden",
+  },
+  healthBarFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+
+  tipCard: {
+    flexDirection: "row-reverse",
+    borderRadius: 20,
+    padding: Spacing.lg,
+    alignItems: "center",
+    borderWidth: 1,
+    gap: Spacing.md,
+  },
+  tipIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: addAlpha(BRAND_CYAN, 0.12),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tipTextCol: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  tipHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+  },
+
+  fab: {
+    position: "absolute",
+    left: Spacing.xl,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+    gap: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
 });
