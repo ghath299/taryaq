@@ -19,80 +19,62 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 
-const BALY_PACKAGE = "iq.baly.consumer";
-const BALY_PLAY_STORE = `https://play.google.com/store/apps/details?id=${BALY_PACKAGE}`;
-const BALY_PLAY_SEARCH = "https://play.google.com/store/search?q=baly%20iraq&c=apps";
+const BALY_PLAY_SEARCH = "https://play.google.com/store/search?q=baly&c=apps";
 const BALY_APP_STORE_SEARCH = "https://apps.apple.com/iq/search?term=baly";
 
 const openBaly = async (lat: number, lng: number, name: string) => {
   const dname = encodeURIComponent(name);
 
-  // Try to read user's current position to pass as pickup (best effort, optional)
+  // Pickup location (best-effort)
   let origin = "";
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
-      const loc = await Location.getLastKnownPositionAsync();
-      const final =
-        loc ||
+      const loc =
+        (await Location.getLastKnownPositionAsync()) ||
         (await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         }));
-      if (final?.coords) {
-        origin = `&slat=${final.coords.latitude}&slng=${final.coords.longitude}`;
+      if (loc?.coords) {
+        origin = `&slat=${loc.coords.latitude}&slng=${loc.coords.longitude}`;
       }
     }
   } catch {}
 
   const query = `dlat=${lat}&dlng=${lng}&dname=${dname}${origin}`;
 
-  // Possible deep-link schemes Baly might register on the device
+  // Possible deep-link schemes Baly may register on the device
   const schemeCandidates = [
     `baly://ride?${query}`,
+    `baly://ride/new?${query}`,
     `balyiq://ride?${query}`,
     `balyconsumer://ride?${query}`,
     `iq.baly.consumer://ride?${query}`,
+    `iq.baly.passenger://ride?${query}`,
   ];
 
-  if (Platform.OS === "android") {
-    // Use Android Intent URL: opens the Baly app if installed, otherwise Play Store
-    const intentUrl =
-      `intent://ride?${query}` +
-      `#Intent;scheme=baly;package=${BALY_PACKAGE};` +
-      `S.browser_fallback_url=${encodeURIComponent(BALY_PLAY_STORE)};end`;
-    try {
-      await Linking.openURL(intentUrl);
-      return;
-    } catch {}
-
-    for (const url of schemeCandidates) {
-      try {
-        const can = await Linking.canOpenURL(url);
-        if (can) {
-          await Linking.openURL(url);
-          return;
-        }
-      } catch {}
-    }
-    try {
-      await Linking.openURL(BALY_PLAY_STORE);
-    } catch {
-      await Linking.openURL(BALY_PLAY_SEARCH);
-    }
-    return;
-  }
-
-  // iOS: try each candidate scheme; if none registered, open App Store search
+  // Try opening each candidate directly. On Android, openURL throws if no
+  // app handles the scheme; we silently move to the next candidate.
   for (const url of schemeCandidates) {
     try {
-      const can = await Linking.canOpenURL(url);
-      if (can) {
-        await Linking.openURL(url);
-        return;
+      // canOpenURL is unreliable on Android 11+ without proper queries entries,
+      // so on Android we just attempt openURL and let it throw on failure.
+      if (Platform.OS === "ios") {
+        const can = await Linking.canOpenURL(url);
+        if (!can) continue;
       }
+      await Linking.openURL(url);
+      return;
     } catch {}
   }
-  await Linking.openURL(BALY_APP_STORE_SEARCH);
+
+  // No Baly scheme handled the request — open the store SEARCH page (not a
+  // specific package id, which can 404 if the id is wrong).
+  const storeSearch =
+    Platform.OS === "ios" ? BALY_APP_STORE_SEARCH : BALY_PLAY_SEARCH;
+  try {
+    await Linking.openURL(storeSearch);
+  } catch {}
 };
 
 const openWaze = (lat: number, lng: number) => {

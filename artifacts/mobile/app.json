@@ -35,9 +35,9 @@
         "VIBRATE"
       ],
       "queries": [
-        { "package": "iq.baly.consumer" },
-        { "package": "com.waze" },
         { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "baly" }] }] },
+        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "balyiq" }] }] },
+        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "balyconsumer" }] }] },
         { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "waze" }] }] }
       ]
     },
