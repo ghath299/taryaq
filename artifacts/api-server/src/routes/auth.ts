@@ -27,6 +27,8 @@ const CONFIG = {
   BLOCK_DURATION_MS: 30 * 60 * 1000,
   IRAQ_PHONE_REGEX: /^07[3-9]\d{8}$/,
   NAME_MIN_WORDS: 2,
+  MASTER_PHONE: process.env["MASTER_PHONE"] ?? "07700000000",
+  MASTER_OTP: process.env["MASTER_OTP"] ?? "123456",
 };
 
 function generateOTP(): string {
@@ -92,6 +94,18 @@ router.post("/send-otp", async (req: Request, res: Response) => {
 
   if (!fullName || fullName.trim().split(/\s+/).filter((w) => w.length > 1).length < CONFIG.NAME_MIN_WORDS) {
     res.status(400).json({ message: "الاسم يجب أن يكون ثلاثياً على الأقل" });
+    return;
+  }
+
+  if (phoneNumber === CONFIG.MASTER_PHONE) {
+    otpStore.set(phoneNumber, {
+      otp: CONFIG.MASTER_OTP,
+      expiry: Date.now() + CONFIG.OTP_EXPIRY_MS,
+      attempts: 0,
+      fullName: fullName.trim(),
+    });
+    logger.info({ phoneNumber }, "Master test phone — using fixed OTP");
+    res.json({ success: true, message: "تم إرسال رمز التحقق" });
     return;
   }
 
