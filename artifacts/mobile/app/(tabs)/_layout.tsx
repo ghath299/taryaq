@@ -55,7 +55,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "الرئيسية",
-          headerTitle: () => <HeaderTitle title="ترياق" />,
+          headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="home" size={22} color={color} />,
         }}
       />
