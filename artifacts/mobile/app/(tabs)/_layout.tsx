@@ -42,6 +42,7 @@ export default function TabLayout() {
         headerStyle: {
           backgroundColor: isIOS ? "transparent" : (isDark ? theme.backgroundDefault : theme.backgroundRoot),
         },
+        headerStatusBarHeight: isWeb ? 50 : undefined,
         headerTransparent: isIOS,
         headerBlurEffect: isDark ? "dark" : "light",
         headerTintColor: theme.text,
