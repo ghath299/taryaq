@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { Stack, useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
+import ImageEditorModal from "@/components/ImageEditorModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
@@ -47,6 +48,7 @@ export default function EditProfileScreen() {
     user?.avatarUri ? null : 0,
   );
   const [saving, setSaving] = useState(false);
+  const [editorUri, setEditorUri] = useState<string | null>(null);
 
   const screenBg = isDark ? "#0A0F1A" : "#F5F7FB";
   const cardBg = isDark ? "#161B22" : "#FFFFFF";
@@ -65,13 +67,11 @@ export default function EditProfileScreen() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
+        allowsEditing: false,
+        quality: 0.9,
       });
       if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
-        setPresetIndex(null);
+        setEditorUri(result.assets[0].uri);
       }
     } catch (e) {
       Alert.alert("خطأ", "تعذّر اختيار الصورة");
@@ -228,6 +228,16 @@ export default function EditProfileScreen() {
             </Pressable>
           </Animated.View>
         </ScrollView>
+        <ImageEditorModal
+          visible={editorUri !== null}
+          uri={editorUri}
+          onCancel={() => setEditorUri(null)}
+          onDone={(croppedUri) => {
+            setAvatarUri(croppedUri);
+            setPresetIndex(null);
+            setEditorUri(null);
+          }}
+        />
       </SafeAreaView>
     </>
   );

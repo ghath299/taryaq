@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@expo-google-fonts/tajawal": "^0.4.1",
+    "expo-image-manipulator": "~14.0.8",
     "expo-notifications": "^0.32.17",
     "firebase": "^12.12.1"
   }
