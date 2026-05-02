@@ -100,28 +100,17 @@ export default function HomeScreen() {
             { paddingTop: Platform.OS === "web" ? 60 : 12 },
           ]}
         >
-          <View style={styles.bellWrap}>
-            <Pressable
-              onPress={() => router.push("/notifications")}
-              style={[
-                styles.bellBtn,
-                { backgroundColor: cardBg, borderColor: subtleBorder },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="الإشعارات، 3 جديدة"
-              hitSlop={8}
-            >
-              <Feather name="bell" size={20} color={textPrimary} />
-            </Pressable>
-            <View style={styles.bellBadge}>
-              <ThemedText
-                type="caption"
-                style={styles.bellBadgeText}
-              >
-                3
-              </ThemedText>
-            </View>
-          </View>
+          <Pressable
+            onPress={() => router.push("/bookings")}
+            style={styles.avatarWrap}
+            accessibilityRole="button"
+            accessibilityLabel="الملف الشخصي والحجوزات"
+          >
+            <Image
+              source={require("@/assets/images/user-avatar.png")}
+              style={styles.avatarImg}
+            />
+          </Pressable>
 
           <View style={styles.greetingArea}>
             <View style={styles.greetingTopRow}>
@@ -155,17 +144,28 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          <Pressable
-            onPress={() => router.push("/bookings")}
-            style={styles.avatarWrap}
-            accessibilityRole="button"
-            accessibilityLabel="الملف الشخصي والحجوزات"
-          >
-            <Image
-              source={require("@/assets/images/user-avatar.png")}
-              style={styles.avatarImg}
-            />
-          </Pressable>
+          <View style={styles.bellWrap}>
+            <Pressable
+              onPress={() => router.push("/notifications")}
+              style={[
+                styles.bellBtn,
+                { backgroundColor: cardBg, borderColor: subtleBorder },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="الإشعارات، 3 جديدة"
+              hitSlop={8}
+            >
+              <Feather name="bell" size={20} color={textPrimary} />
+            </Pressable>
+            <View style={styles.bellBadge}>
+              <ThemedText
+                type="caption"
+                style={styles.bellBadgeText}
+              >
+                3
+              </ThemedText>
+            </View>
+          </View>
         </Animated.View>
 
         {/* SEARCH BAR */}
