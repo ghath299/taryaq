@@ -163,37 +163,6 @@ export default function EditProfileScreen() {
             </LinearGradient>
           </Animated.View>
 
-          {/* Preset avatars */}
-          <Animated.View entering={FadeInUp.delay(100).duration(380)} style={styles.sectionWrap}>
-            <ThemedText type="small" style={[styles.sectionTitle, { color: textSecondary }]}>
-              اختر صورة جاهزة
-            </ThemedText>
-            <View style={[styles.presetCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
-              <View style={styles.presetRow}>
-                {PRESET_AVATARS.map((src, idx) => {
-                  const active = presetIndex === idx && !avatarUri;
-                  return (
-                    <Pressable
-                      key={idx}
-                      onPress={() => selectPreset(idx)}
-                      style={[
-                        styles.presetItem,
-                        active && { borderColor: BRAND_BLUE, borderWidth: 3 },
-                      ]}
-                    >
-                      <Image source={src} style={styles.presetImg} />
-                      {active ? (
-                        <View style={styles.presetCheck}>
-                          <Feather name="check" size={12} color="#FFF" />
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          </Animated.View>
-
           {/* Name input */}
           <Animated.View entering={FadeInUp.delay(160).duration(380)} style={styles.sectionWrap}>
             <ThemedText type="small" style={[styles.sectionTitle, { color: textSecondary }]}>
