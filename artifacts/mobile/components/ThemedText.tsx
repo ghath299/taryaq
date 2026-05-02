@@ -1,0 +1,59 @@
+import { Text, type TextProps } from "react-native";
+import { useTheme } from "@/hooks/useTheme";
+import { Typography } from "@/constants/colors";
+
+export type ThemedTextProps = TextProps & {
+  lightColor?: string;
+  darkColor?: string;
+  type?: "hero" | "h1" | "h2" | "h3" | "h4" | "body" | "small" | "caption" | "link";
+};
+
+export function ThemedText({
+  style,
+  lightColor,
+  darkColor,
+  type = "body",
+  ...rest
+}: ThemedTextProps) {
+  const { theme, isDark } = useTheme();
+
+  const getColor = () => {
+    if (isDark && darkColor) return darkColor;
+    if (!isDark && lightColor) return lightColor;
+    if (type === "link") return theme.link;
+    return theme.text;
+  };
+
+  const getTypeStyle = () => {
+    switch (type) {
+      case "hero": return Typography.hero;
+      case "h1": return Typography.h1;
+      case "h2": return Typography.h2;
+      case "h3": return Typography.h3;
+      case "h4": return Typography.h4;
+      case "body": return Typography.body;
+      case "small": return Typography.small;
+      case "caption": return Typography.caption;
+      case "link": return Typography.link;
+      default: return Typography.body;
+    }
+  };
+
+  const getFontFamily = () => {
+    const weight = getTypeStyle().fontWeight;
+    if (weight === "700") return "Tajawal_700Bold";
+    if (weight === "600" || weight === "500") return "Tajawal_500Medium";
+    return "Tajawal_400Regular";
+  };
+
+  return (
+    <Text
+      style={[
+        { color: getColor(), fontFamily: getFontFamily() },
+        getTypeStyle(),
+        style,
+      ]}
+      {...rest}
+    />
+  );
+}

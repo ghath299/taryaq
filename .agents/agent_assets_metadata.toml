@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "5-taS1Kj6077Q1_p9xFyk"
+uri = "file://artifacts/mobile/assets/images/icon.png"
+type = "image"
+title = "triaq health app icon"
+
+[[generated]]
+id = "z5jpzglad76qKQxQYvRHP"
+uri = "file://artifacts/mobile/assets/images/doctor-consultation.png"
+type = "image"
+title = "doctor consultation illustration"
+
+[[generated]]
+id = "PoDrAtdHNd2wxzYeakbHG"
+uri = "file://artifacts/mobile/assets/images/empty-bookings.png"
+type = "image"
+title = "empty bookings state"

@@ -1,0 +1,49 @@
+I have attached a zip file of an existing Arabic web app called "ترياق" (Triaq) 
+for patients. Your job is to rebuild it as a pixel-perfect React Native (Expo) 
+mobile app.
+
+CRITICAL RULES — READ BEFORE STARTING:
+- Study EVERY file in the zip before writing a single line of code
+- Replicate EVERY screen, EVERY color, EVERY font size, EVERY spacing, 
+  EVERY animation, EVERY interaction EXACTLY as it exists in the web app
+- If the web app has a button at position X with color Y and size Z, 
+  the mobile app must have that exact button at the same visual position 
+  with the same color and size
+- NOT ONE SINGLE FEATURE may be missing or changed
+- NOT ONE SINGLE COLOR may be different
+- NOT ONE SINGLE SCREEN may be skipped
+- The user must look at both apps and see ZERO difference visually
+
+TECHNICAL MIGRATION:
+- Replace all HTML/CSS with React Native components
+- Replace react-router with Expo Router (file-based navigation)
+- Replace MongoDB with Firebase Realtime Database:
+  apiKey: "AIzaSyBD2_B1RRQ7RSeTXYjhsUd-314juYMkOaI"
+  authDomain: "ghath-c86ae.firebaseapp.com"
+  databaseURL: "https://ghath-c86ae-default-rtdb.firebaseio.com"
+  projectId: "ghath-c86ae"
+  storageBucket: "ghath-c86ae.firebasestorage.app"
+  messagingSenderId: "309047121444"
+  appId: "1:309047121444:web:392d4dd79b25d8d5276ab1"
+- Keep ALL business logic identical
+- Keep ALL Arabic text identical
+- Keep ALL RTL layout identical
+- Keep login flow identical (phone + full name + OTP via SMS/WhatsApp)
+- Add Expo Notifications for receiving push notifications from doctor app
+
+QUALITY STANDARD:
+- This must be production-ready, not a prototype
+- Every screen must work perfectly
+- All Firebase connections must be real-time
+- Animations must be smooth (use react-native-reanimated)
+- App must run perfectly with: npx expo start
+
+VERIFICATION CHECKLIST — before finishing, confirm:
+✅ Every screen from the web app exists in the mobile app
+✅ Every color matches exactly
+✅ Every feature works
+✅ Firebase is connected and real-time
+✅ RTL Arabic works on all screens
+✅ Notifications are set up
+✅ Login flow works identically
+✅ App runs without errors
