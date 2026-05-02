@@ -31,7 +31,6 @@ export default function BookAppointmentScreen() {
   const doctor = doctors.find((d) => d.id === doctorId);
   const [patientName, setPatientName] = useState(user?.fullName || "");
   const [age, setAge] = useState("");
-  const [phone, setPhone] = useState(user?.phoneNumber || "");
   const [reason, setReason] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -58,7 +57,7 @@ export default function BookAppointmentScreen() {
         accountOwnerName: user?.fullName || patientName.trim(),
         accountOwnerId: user?.id || user?.phoneNumber || "unknown",
         age: Number(age),
-        phone: phone.trim(),
+        phone: user?.phoneNumber || "",
         reason: reason.trim(),
         date: date.trim(),
         time: time.trim(),
@@ -115,15 +114,9 @@ export default function BookAppointmentScreen() {
             <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>اسم المريض *</ThemedText>
             <TextInput value={patientName} onChangeText={setPatientName} placeholder="الاسم الكامل" placeholderTextColor={theme.textSecondary} style={inputStyle} textAlign="right" />
           </View>
-          <View style={styles.fieldRow}>
-            <View style={[styles.field, { flex: 1 }]}>
-              <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>العمر *</ThemedText>
-              <TextInput value={age} onChangeText={setAge} placeholder="25" keyboardType="number-pad" maxLength={3} placeholderTextColor={theme.textSecondary} style={[inputStyle, { textAlign: "right" }]} textAlign="right" />
-            </View>
-            <View style={[styles.field, { flex: 2 }]}>
-              <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>رقم الهاتف</ThemedText>
-              <TextInput value={phone} onChangeText={setPhone} placeholder="07XXXXXXXXX" keyboardType="phone-pad" placeholderTextColor={theme.textSecondary} style={inputStyle} textAlign="right" />
-            </View>
+          <View style={styles.field}>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>العمر *</ThemedText>
+            <TextInput value={age} onChangeText={setAge} placeholder="25" keyboardType="number-pad" maxLength={3} placeholderTextColor={theme.textSecondary} style={[inputStyle, { textAlign: "right" }]} textAlign="right" />
           </View>
           <View style={styles.field}>
             <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>سبب الزيارة *</ThemedText>
