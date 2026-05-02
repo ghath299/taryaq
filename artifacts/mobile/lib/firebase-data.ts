@@ -35,6 +35,17 @@ export interface FirebaseClinic {
 
 export type BookingStatus = "انتظار" | "مقبول" | "مرفوض" | "مكتمل" | "لم يحضر";
 
+export type PaymentMethod =
+  | "cash"
+  | "zaincash"
+  | "fastpay"
+  | "asiahawala"
+  | "qicard"
+  | "fib"
+  | "nasspay";
+
+export type PaymentStatus = "غير مدفوع" | "قيد الدفع" | "مدفوع" | "فشل";
+
 export interface FirebaseBooking {
   patientName: string;
   accountOwnerName: string;
@@ -48,6 +59,8 @@ export interface FirebaseBooking {
   queueNumber?: number;
   status: BookingStatus;
   autoBooked?: boolean;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
   createdAt?: number | object;
   completedAt?: number | object;
   enteredAt?: number | object;
