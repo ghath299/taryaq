@@ -8,7 +8,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,6 +17,26 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
+
+const openBaly = async (lat: number, lng: number, name: string) => {
+  const dname = encodeURIComponent(name);
+  const balyUrl = `baly://ride?dlat=${lat}&dlng=${lng}&dname=${dname}`;
+  const balyWeb = `https://baly.iq/ride?dlat=${lat}&dlng=${lng}&dname=${dname}`;
+  try {
+    const can = await Linking.canOpenURL(balyUrl);
+    if (can) {
+      await Linking.openURL(balyUrl);
+      return;
+    }
+  } catch {}
+  try {
+    await Linking.openURL(balyWeb);
+  } catch {
+    await Linking.openURL(
+      "https://play.google.com/store/apps/details?id=com.baly.passenger",
+    );
+  }
+};
 
 const openWaze = (lat: number, lng: number) => {
   const deep = `waze://?ll=${lat},${lng}&navigate=yes`;
@@ -133,13 +153,38 @@ export default function DoctorDetailScreen() {
             <Feather name="navigation" size={18} color={theme.primary} />
             <ThemedText type="h4" style={{ color: theme.text, fontWeight: "700", marginRight: Spacing.sm }}>الوصول للعيادة</ThemedText>
           </View>
-          <Pressable
-            onPress={() => openWaze(doctor.lat, doctor.lng)}
-            style={[styles.wazeBtn, { backgroundColor: addAlpha(theme.primary, 0.1), borderColor: addAlpha(theme.primary, 0.2) }]}
-          >
-            <Feather name="navigation" size={18} color={theme.primary} />
-            <ThemedText type="body" style={{ color: theme.primary, fontWeight: "600", marginRight: Spacing.sm }}>فتح في Waze</ThemedText>
-          </Pressable>
+          <View style={styles.travelBtnRow}>
+            <Pressable
+              onPress={() => openWaze(doctor.lat, doctor.lng)}
+              style={[
+                styles.wazeBtn,
+                { flex: 1, backgroundColor: addAlpha(theme.primary, 0.1), borderColor: addAlpha(theme.primary, 0.2) },
+              ]}
+            >
+              <Feather name="navigation" size={18} color={theme.primary} />
+              <ThemedText
+                type="body"
+                style={{ color: theme.primary, fontWeight: "600", marginRight: Spacing.sm }}
+              >
+                فتح في Waze
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={() => openBaly(doctor.lat, doctor.lng, doctor.nameAr || "العيادة")}
+              style={[
+                styles.wazeBtn,
+                { flex: 1, backgroundColor: "#1A1AFF", borderColor: "#1A1AFF" },
+              ]}
+            >
+              <MaterialCommunityIcons name="taxi" size={18} color="#FFF" />
+              <ThemedText
+                type="body"
+                style={{ color: "#FFF", fontWeight: "700", marginRight: Spacing.sm }}
+              >
+                طلب تكسي Baly
+              </ThemedText>
+            </Pressable>
+          </View>
         </Animated.View>
       </ScrollView>
 
@@ -170,5 +215,6 @@ const styles = StyleSheet.create({
   daysRow: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.xs, justifyContent: "flex-end" },
   dayChip: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: BorderRadius.full, borderWidth: 1 },
   wazeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", height: 48, borderRadius: BorderRadius.lg, borderWidth: 1, gap: Spacing.sm },
+  travelBtnRow: { flexDirection: "row", gap: Spacing.sm },
   bookingFooter: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, borderTopWidth: 1 },
 });
