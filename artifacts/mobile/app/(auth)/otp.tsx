@@ -129,7 +129,7 @@ export default function OTPScreen() {
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={[styles.container, { paddingTop: 20, paddingBottom: insets.bottom + 20 }]}>
+      <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 64 : 20, paddingBottom: insets.bottom + 20 }]}>
         <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
           <LinearGradient colors={[theme.primary, theme.primaryDark]} style={styles.iconBubble}>
             <Feather name="message-circle" size={36} color="#FFF" />

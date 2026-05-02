@@ -63,7 +63,7 @@ export default function LocationScreen() {
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: 20, paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.container, { paddingTop: Platform.OS === "web" ? 64 : 20, paddingBottom: insets.bottom + 20 }]}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={ZoomIn.duration(600)} style={styles.heroSection}>

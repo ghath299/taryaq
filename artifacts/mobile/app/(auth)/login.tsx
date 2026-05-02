@@ -75,7 +75,7 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: 24, paddingBottom: insets.bottom + 24 },
+          { paddingTop: Platform.OS === "web" ? 64 : 24, paddingBottom: insets.bottom + 24 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}

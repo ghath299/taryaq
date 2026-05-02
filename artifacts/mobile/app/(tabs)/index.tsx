@@ -97,7 +97,7 @@ export default function HomeScreen() {
           entering={FadeIn.duration(300)}
           style={[
             styles.header,
-            { paddingTop: Platform.OS === "web" ? 24 : 12 },
+            { paddingTop: Platform.OS === "web" ? 60 : 12 },
           ]}
         >
           <View style={styles.bellWrap}>
