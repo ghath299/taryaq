@@ -85,6 +85,10 @@ function RootLayoutNav() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="profile"
+        options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
         name="career-join"
         options={{
           headerShown: true,

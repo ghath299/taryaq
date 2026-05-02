@@ -141,10 +141,11 @@ export default function HomeScreen() {
           ]}
         >
           <Pressable
-            onPress={() => router.push("/bookings")}
+            onPress={() => router.push("/profile")}
             style={styles.avatarWrap}
             accessibilityRole="button"
-            accessibilityLabel="الملف الشخصي والحجوزات"
+            accessibilityLabel="الملف الشخصي والإعدادات"
+            hitSlop={6}
           >
             <Image
               source={require("@/assets/images/user-avatar.png")}
