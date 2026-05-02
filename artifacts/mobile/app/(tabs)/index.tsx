@@ -16,6 +16,7 @@ import Animated, { FadeIn, FadeInDown, FadeInUp } from "react-native-reanimated"
 import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import EmergencyModal from "@/components/EmergencyModal";
+import { AdsCarousel, type AdSlide } from "@/components/AdsCarousel";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { doctors as mockDoctors } from "@/data/mockData";
@@ -36,6 +37,45 @@ const doctorImages: Record<string, ReturnType<typeof require>> = {
 };
 
 const featuredDoctorIds = ["2", "1", "3"];
+
+const adsSlides: AdSlide[] = [
+  {
+    id: "ad-doctor",
+    title: "احجز طبيبك خلال\nثواني",
+    subtitle: "أو ابحث عن دواء قريب منك",
+    ctaLabel: "ابدأ الآن",
+    ctaRoute: "/(tabs)/doctors",
+    image: require("@/assets/images/banner-phone.png"),
+    gradient: ["#1F40C8", "#2A4FCC", "#5CC4E6"],
+  },
+  {
+    id: "ad-pharmacy",
+    title: "صيدليات قريبة\nمنك دائماً",
+    subtitle: "اطلب دواءك ووصلك للباب",
+    ctaLabel: "اكتشف",
+    ctaRoute: "/(tabs)/pharmacies",
+    image: require("@/assets/images/water-glass.png"),
+    gradient: ["#7C3AED", "#9F67F0", "#C4B5FD"],
+  },
+  {
+    id: "ad-consult",
+    title: "استشارة فورية\nمع طبيب",
+    subtitle: "تواصل مباشر بضغطة واحدة",
+    ctaLabel: "ابدأ استشارة",
+    ctaRoute: "/(tabs)/doctors",
+    image: require("@/assets/images/doctor-consultation.png"),
+    gradient: ["#0E9488", "#14B8A6", "#5EEAD4"],
+  },
+  {
+    id: "ad-health",
+    title: "صحتك تحت\nحمايتنا",
+    subtitle: "تابع مؤشراتك الصحية بسهولة",
+    ctaLabel: "اعرف المزيد",
+    ctaRoute: "/(tabs)/doctors",
+    image: require("@/assets/images/health-shield.png"),
+    gradient: ["#0369A1", "#0EA5E9", "#7DD3FC"],
+  },
+];
 
 interface QuickService {
   id: string;
@@ -195,56 +235,12 @@ export default function HomeScreen() {
           </Pressable>
         </Animated.View>
 
-        {/* HERO BANNER */}
+        {/* HERO ADS CAROUSEL */}
         <Animated.View
           entering={FadeInDown.delay(150).duration(450)}
           style={styles.bannerWrap}
         >
-          <LinearGradient
-            colors={[BRAND_BLUE_DEEP, BRAND_BLUE, BANNER_CYAN]}
-            locations={[0, 0.55, 1]}
-            start={{ x: 0, y: 0.2 }}
-            end={{ x: 1, y: 0.8 }}
-            style={styles.banner}
-          >
-            {/* Decorative background crosses */}
-            <View style={styles.crossDecor1}>
-              <Feather name="plus" size={22} color="rgba(255,255,255,0.25)" />
-            </View>
-            <View style={styles.crossDecor2}>
-              <Feather name="plus" size={16} color="rgba(255,255,255,0.2)" />
-            </View>
-            <View style={styles.crossDecor3}>
-              <Feather name="plus" size={28} color="rgba(255,255,255,0.18)" />
-            </View>
-
-            <View style={styles.bannerImageCol}>
-              <Image
-                source={require("@/assets/images/banner-phone.png")}
-                style={styles.bannerImage}
-                resizeMode="contain"
-              />
-            </View>
-            <View style={styles.bannerTextCol}>
-              <ThemedText type="h2" style={styles.bannerTitle}>
-                {`احجز طبيبك خلال\nثواني`}
-              </ThemedText>
-              <ThemedText type="small" style={styles.bannerSubtitle}>
-                أو ابحث عن دواء قريب منك
-              </ThemedText>
-              <Pressable
-                onPress={() => router.push("/(tabs)/doctors" as never)}
-                style={styles.bannerCta}
-                accessibilityRole="button"
-                accessibilityLabel="ابدأ الآن"
-              >
-                <ThemedText type="small" style={styles.bannerCtaText}>
-                  ابدأ الآن
-                </ThemedText>
-                <Feather name="chevron-left" size={14} color={BRAND_BLUE_DEEP} />
-              </Pressable>
-            </View>
-          </LinearGradient>
+          <AdsCarousel slides={adsSlides} horizontalPadding={0} />
         </Animated.View>
 
         {/* QUICK SERVICES */}
