@@ -10,6 +10,8 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
+
+const isWeb = Platform.OS === "web";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -238,7 +240,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.md,
+    paddingTop: isWeb ? 60 : Spacing.md,
     paddingBottom: Spacing.lg,
   },
   closeBtn: {
