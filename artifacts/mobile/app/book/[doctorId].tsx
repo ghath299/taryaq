@@ -21,25 +21,19 @@ import { createBooking, type PaymentMethod } from "@/lib/firebase-data";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 import * as Haptics from "expo-haptics";
+import { PaymentSheet, type ProviderMeta } from "@/components/PaymentSheet";
 
 const ERROR_COLOR = "#E53935";
 
 type PayKind = "cash" | "electronic";
 
-interface ElectronicProvider {
-  id: Exclude<PaymentMethod, "cash">;
-  nameAr: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  color: string;
-}
-
-const ELECTRONIC_PROVIDERS: ElectronicProvider[] = [
-  { id: "zaincash", nameAr: "زين كاش", icon: "cellphone", color: "#7B2CBF" },
-  { id: "fastpay", nameAr: "فاست باي", icon: "lightning-bolt", color: "#F59E0B" },
-  { id: "asiahawala", nameAr: "آسيا حوالة", icon: "wallet", color: "#0EA5E9" },
-  { id: "qicard", nameAr: "كي كارد (Qi)", icon: "credit-card", color: "#16A34A" },
-  { id: "fib", nameAr: "FIB", icon: "bank", color: "#1F40C8" },
-  { id: "nasspay", nameAr: "NassPay", icon: "qrcode", color: "#DC2626" },
+const ELECTRONIC_PROVIDERS: ProviderMeta[] = [
+  { id: "zaincash", nameAr: "زين كاش", icon: "cellphone", color: "#7B2CBF", kind: "wallet" },
+  { id: "fastpay", nameAr: "فاست باي", icon: "lightning-bolt", color: "#F59E0B", kind: "wallet" },
+  { id: "asiahawala", nameAr: "آسيا حوالة", icon: "wallet", color: "#0EA5E9", kind: "wallet" },
+  { id: "qicard", nameAr: "كي كارد (Qi)", icon: "credit-card", color: "#16A34A", kind: "card" },
+  { id: "fib", nameAr: "FIB", icon: "bank", color: "#1F40C8", kind: "card" },
+  { id: "nasspay", nameAr: "NassPay", icon: "qrcode", color: "#DC2626", kind: "wallet" },
 ];
 
 export default function BookAppointmentScreen() {
@@ -54,10 +48,9 @@ export default function BookAppointmentScreen() {
   const [age, setAge] = useState("");
   const [reason, setReason] = useState("");
   const [payKind, setPayKind] = useState<PayKind>("cash");
-  const [provider, setProvider] = useState<ElectronicProvider["id"] | null>(
-    null,
-  );
+  const [provider, setProvider] = useState<ProviderMeta["id"] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paySheetOpen, setPaySheetOpen] = useState(false);
 
   const [errors, setErrors] = useState<{
     name?: boolean;
@@ -65,7 +58,11 @@ export default function BookAppointmentScreen() {
     provider?: boolean;
   }>({});
 
-  const handleSubmit = async () => {
+  const selectedProvider = provider
+    ? ELECTRONIC_PROVIDERS.find((p) => p.id === provider) ?? null
+    : null;
+
+  const validate = () => {
     const nameMissing = !patientName.trim();
     const ageNum = Number(age);
     const ageInvalid = !age || isNaN(ageNum) || ageNum < 1 || ageNum > 120;
@@ -78,38 +75,42 @@ export default function BookAppointmentScreen() {
         provider: providerMissing,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
+      return false;
     }
-
     setErrors({});
+    return true;
+  };
+
+  const submitBookingToFirebase = async (
+    paymentMethod: PaymentMethod,
+    txId?: string,
+  ) => {
     if (!doctor) {
       Alert.alert("خطأ", "الطبيب غير موجود");
       return;
     }
-
-    const paymentMethod: PaymentMethod =
-      payKind === "cash" ? "cash" : (provider as PaymentMethod);
-
     setIsSubmitting(true);
     try {
       await createBooking(doctorId!, {
         patientName: patientName.trim(),
         accountOwnerName: user?.fullName || patientName.trim(),
         accountOwnerId: user?.id || user?.phoneNumber || "unknown",
-        age: ageNum,
+        age: Number(age),
         phone: user?.phoneNumber || "",
         reason: reason.trim(),
         date: "",
         time: "",
         paymentMethod,
-        paymentStatus:
-          paymentMethod === "cash" ? "غير مدفوع" : "قيد الدفع",
+        paymentStatus: paymentMethod === "cash" ? "غير مدفوع" : "مدفوع",
+        ...(txId
+          ? { paymentTxId: txId, paymentPaidAt: Date.now() }
+          : {}),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const payLabel =
         paymentMethod === "cash"
           ? "الدفع نقداً عند الزيارة"
-          : `الدفع عبر ${ELECTRONIC_PROVIDERS.find((p) => p.id === paymentMethod)?.nameAr || ""}`;
+          : `تم الدفع عبر ${ELECTRONIC_PROVIDERS.find((p) => p.id === paymentMethod)?.nameAr || ""}`;
       Alert.alert(
         "تم الحجز بنجاح ✅",
         `تم إرسال طلب حجزك مع ${doctor.nameAr}.\n${payLabel}.\nسيتم التواصل معك لتأكيد الموعد.`,
@@ -120,6 +121,22 @@ export default function BookAppointmentScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    if (payKind === "cash") {
+      await submitBookingToFirebase("cash");
+      return;
+    }
+    // Electronic: open payment sheet to collect payment details
+    setPaySheetOpen(true);
+  };
+
+  const handlePaymentSuccess = async (txId: string) => {
+    setPaySheetOpen(false);
+    if (!provider) return;
+    await submitBookingToFirebase(provider, txId);
   };
 
   const baseInput = {
@@ -298,10 +315,21 @@ export default function BookAppointmentScreen() {
 
         <Animated.View entering={FadeInUp.delay(350).duration(350)}>
           <Button onPress={handleSubmit} disabled={isSubmitting} style={styles.submitBtn}>
-            {isSubmitting ? "جاري الإرسال..." : "إرسال طلب الحجز"}
+            {isSubmitting
+              ? "جاري الإرسال..."
+              : payKind === "electronic"
+                ? "متابعة إلى الدفع"
+                : "إرسال طلب الحجز"}
           </Button>
         </Animated.View>
       </ScrollView>
+
+      <PaymentSheet
+        visible={paySheetOpen}
+        provider={selectedProvider}
+        onCancel={() => setPaySheetOpen(false)}
+        onSuccess={handlePaymentSuccess}
+      />
     </KeyboardAvoidingView>
   );
 }

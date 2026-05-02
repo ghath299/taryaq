@@ -61,6 +61,8 @@ export interface FirebaseBooking {
   autoBooked?: boolean;
   paymentMethod?: PaymentMethod;
   paymentStatus?: PaymentStatus;
+  paymentTxId?: string;
+  paymentPaidAt?: number | object;
   createdAt?: number | object;
   completedAt?: number | object;
   enteredAt?: number | object;
