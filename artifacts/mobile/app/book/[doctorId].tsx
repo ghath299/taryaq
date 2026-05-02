@@ -7,7 +7,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -17,7 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
-import { createBooking, type PaymentMethod } from "@/lib/firebase-data";
+import { createBooking } from "@/lib/firebase-data";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 import * as Haptics from "expo-haptics";
@@ -28,20 +27,16 @@ import {
 } from "@/components/PaymentSheet";
 import { processQiCardPayment } from "@/lib/qicard";
 
-const DEFAULT_CONSULTATION_FEE = 25000; // د.ع — placeholder
-
+const DEFAULT_CONSULTATION_FEE = 25000;
 const ERROR_COLOR = "#E53935";
 
-type PayKind = "cash" | "electronic";
-
-const ELECTRONIC_PROVIDERS: ProviderMeta[] = [
-  { id: "zaincash", nameAr: "زين كاش", icon: "cellphone", color: "#7B2CBF", kind: "wallet" },
-  { id: "fastpay", nameAr: "فاست باي", icon: "lightning-bolt", color: "#F59E0B", kind: "wallet" },
-  { id: "asiahawala", nameAr: "آسيا حوالة", icon: "wallet", color: "#0EA5E9", kind: "wallet" },
-  { id: "qicard", nameAr: "كي كارد (Qi)", icon: "credit-card", color: "#16A34A", kind: "card" },
-  { id: "fib", nameAr: "FIB", icon: "bank", color: "#1F40C8", kind: "card" },
-  { id: "nasspay", nameAr: "NassPay", icon: "qrcode", color: "#DC2626", kind: "wallet" },
-];
+const QI_PROVIDER: ProviderMeta = {
+  id: "qicard",
+  nameAr: "كي كارد (Qi)",
+  icon: "credit-card",
+  color: "#16A34A",
+  kind: "card",
+};
 
 export default function BookAppointmentScreen() {
   const insets = useSafeAreaInsets();
@@ -54,33 +49,20 @@ export default function BookAppointmentScreen() {
   const [patientName, setPatientName] = useState(user?.fullName || "");
   const [age, setAge] = useState("");
   const [reason, setReason] = useState("");
-  const [payKind, setPayKind] = useState<PayKind>("cash");
-  const [provider, setProvider] = useState<ProviderMeta["id"] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paySheetOpen, setPaySheetOpen] = useState(false);
 
   const [errors, setErrors] = useState<{
     name?: boolean;
     age?: boolean;
-    provider?: boolean;
   }>({});
-
-  const selectedProvider = provider
-    ? ELECTRONIC_PROVIDERS.find((p) => p.id === provider) ?? null
-    : null;
 
   const validate = () => {
     const nameMissing = !patientName.trim();
     const ageNum = Number(age);
     const ageInvalid = !age || isNaN(ageNum) || ageNum < 1 || ageNum > 120;
-    const providerMissing = payKind === "electronic" && !provider;
-
-    if (nameMissing || ageInvalid || providerMissing) {
-      setErrors({
-        name: nameMissing,
-        age: ageInvalid,
-        provider: providerMissing,
-      });
+    if (nameMissing || ageInvalid) {
+      setErrors({ name: nameMissing, age: ageInvalid });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       return false;
     }
@@ -88,17 +70,13 @@ export default function BookAppointmentScreen() {
     return true;
   };
 
-  const submitBookingToFirebase = async (
-    paymentMethod: PaymentMethod,
-    txId?: string,
-  ) => {
+  const submitBookingToFirebase = async (txId: string) => {
     if (!doctor) {
       Alert.alert("خطأ", "الطبيب غير موجود");
       return;
     }
     setIsSubmitting(true);
     try {
-      const isPaid = paymentMethod !== "cash" && !!txId;
       await createBooking(doctorId!, {
         patientName: patientName.trim(),
         accountOwnerName: user?.fullName || patientName.trim(),
@@ -108,34 +86,22 @@ export default function BookAppointmentScreen() {
         reason: reason.trim(),
         date: "",
         time: "",
-        paymentMethod,
-        paymentStatus:
-          paymentMethod === "cash" ? "غير مدفوع" : isPaid ? "مدفوع" : "قيد الدفع",
-        ...(txId
-          ? { paymentTxId: txId, paymentPaidAt: Date.now() }
-          : {}),
+        paymentMethod: "qicard",
+        paymentStatus: "مدفوع",
+        paymentTxId: txId,
+        paymentPaidAt: Date.now(),
         payment: {
-          method: paymentMethod,
-          status:
-            paymentMethod === "cash"
-              ? "unpaid"
-              : isPaid
-                ? "paid"
-                : "pending",
-          ...(txId ? { transactionId: txId, paidAt: Date.now() } : {}),
-          ...(paymentMethod !== "cash"
-            ? { amount: DEFAULT_CONSULTATION_FEE }
-            : {}),
+          method: "qicard",
+          status: "paid",
+          transactionId: txId,
+          amount: DEFAULT_CONSULTATION_FEE,
+          paidAt: Date.now(),
         },
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const payLabel =
-        paymentMethod === "cash"
-          ? "الدفع نقداً عند الزيارة"
-          : `تم الدفع عبر ${ELECTRONIC_PROVIDERS.find((p) => p.id === paymentMethod)?.nameAr || ""}`;
       Alert.alert(
         "تم الحجز بنجاح ✅",
-        `تم إرسال طلب حجزك مع ${doctor.nameAr}.\n${payLabel}.\nسيتم التواصل معك لتأكيد الموعد.`,
+        `تم إرسال طلب حجزك مع ${doctor.nameAr}.\nتم الدفع عبر كي كارد (Qi).\nسيتم التواصل معك لتأكيد الموعد.`,
         [{ text: "حسناً", onPress: () => router.back() }],
       );
     } catch (e) {
@@ -162,20 +128,14 @@ export default function BookAppointmentScreen() {
     };
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!validate()) return;
-    if (payKind === "cash") {
-      await submitBookingToFirebase("cash");
-      return;
-    }
-    // Electronic: open payment sheet to collect payment details
     setPaySheetOpen(true);
   };
 
   const handlePaymentSuccess = async (txId: string) => {
     setPaySheetOpen(false);
-    if (!provider) return;
-    await submitBookingToFirebase(provider, txId);
+    await submitBookingToFirebase(txId);
   };
 
   const baseInput = {
@@ -272,77 +232,68 @@ export default function BookAppointmentScreen() {
         <Animated.View entering={FadeInUp.delay(220).duration(350)} style={styles.section}>
           <ThemedText type="h4" style={styles.sectionTitle}>طريقة الدفع</ThemedText>
 
-          <View style={styles.payKindRow}>
-            <PayKindCard
-              active={payKind === "cash"}
-              theme={theme}
-              isDark={isDark}
-              icon="cash"
-              label="نقداً"
-              hint="ادفع عند الزيارة"
-              onPress={() => {
-                setPayKind("cash");
-                setProvider(null);
-                if (errors.provider) setErrors((e) => ({ ...e, provider: false }));
-              }}
-            />
-            <PayKindCard
-              active={payKind === "electronic"}
-              theme={theme}
-              isDark={isDark}
-              icon="credit-card-outline"
-              label="إلكتروني"
-              hint="محفظة أو بطاقة"
-              onPress={() => setPayKind("electronic")}
-            />
+          <View
+            style={[
+              styles.qiCard,
+              {
+                backgroundColor: addAlpha(QI_PROVIDER.color, 0.08),
+                borderColor: QI_PROVIDER.color,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.qiIcon,
+                { backgroundColor: addAlpha(QI_PROVIDER.color, 0.15) },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={QI_PROVIDER.icon}
+                size={28}
+                color={QI_PROVIDER.color}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText
+                type="h4"
+                style={{ fontWeight: "700", color: theme.text, textAlign: "right" }}
+              >
+                {QI_PROVIDER.nameAr}
+              </ThemedText>
+              <ThemedText
+                type="small"
+                style={{ color: theme.textSecondary, textAlign: "right" }}
+              >
+                ادفع بأمان عبر بطاقة كي كارد
+              </ThemedText>
+            </View>
+            <View style={[styles.qiCheck, { backgroundColor: QI_PROVIDER.color }]}>
+              <Feather name="check" size={14} color="#FFF" />
+            </View>
           </View>
 
-          {payKind === "electronic" ? (
-            <View style={{ gap: Spacing.sm, marginTop: 4 }}>
-              <ThemedText type="small" style={[styles.label, labelColor(errors.provider)]}>
-                اختر طريقة الدفع *
-              </ThemedText>
-              <View style={styles.providerGrid}>
-                {ELECTRONIC_PROVIDERS.map((p) => {
-                  const selected = provider === p.id;
-                  return (
-                    <Pressable
-                      key={p.id}
-                      onPress={() => {
-                        setProvider(p.id);
-                        if (errors.provider) setErrors((e) => ({ ...e, provider: false }));
-                        Haptics.selectionAsync();
-                      }}
-                      style={[
-                        styles.providerCard,
-                        {
-                          backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
-                          borderColor: selected
-                            ? p.color
-                            : errors.provider
-                              ? ERROR_COLOR
-                              : theme.border,
-                          borderWidth: selected ? 2 : 1.5,
-                        },
-                      ]}
-                    >
-                      <View style={[styles.providerIcon, { backgroundColor: addAlpha(p.color, 0.12) }]}>
-                        <MaterialCommunityIcons name={p.icon} size={22} color={p.color} />
-                      </View>
-                      <ThemedText type="small" style={{ textAlign: "center", fontWeight: selected ? "700" : "500", color: theme.text }}>
-                        {p.nameAr}
-                      </ThemedText>
-                      {selected ? (
-                        <View style={[styles.providerCheck, { backgroundColor: p.color }]}>
-                          <Feather name="check" size={11} color="#FFF" />
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          ) : null}
+          <View
+            style={[
+              styles.amountRow,
+              {
+                backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            <ThemedText
+              type="h4"
+              style={{ fontWeight: "700", color: theme.text }}
+            >
+              {DEFAULT_CONSULTATION_FEE.toLocaleString("ar-IQ")} د.ع
+            </ThemedText>
+            <ThemedText
+              type="small"
+              style={{ color: theme.textSecondary, textAlign: "right" }}
+            >
+              قيمة الكشف
+            </ThemedText>
+          </View>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(300).duration(350)} style={[styles.disclaimer, { backgroundColor: addAlpha(theme.primary, 0.06), borderColor: addAlpha(theme.primary, 0.2) }]}>
@@ -354,69 +305,20 @@ export default function BookAppointmentScreen() {
 
         <Animated.View entering={FadeInUp.delay(350).duration(350)}>
           <Button onPress={handleSubmit} disabled={isSubmitting} style={styles.submitBtn}>
-            {isSubmitting
-              ? "جاري الإرسال..."
-              : payKind === "electronic"
-                ? "متابعة إلى الدفع"
-                : "إرسال طلب الحجز"}
+            {isSubmitting ? "جاري الإرسال..." : "متابعة إلى الدفع"}
           </Button>
         </Animated.View>
       </ScrollView>
 
       <PaymentSheet
         visible={paySheetOpen}
-        provider={selectedProvider}
-        amount={
-          selectedProvider ? DEFAULT_CONSULTATION_FEE : undefined
-        }
-        onProcess={
-          selectedProvider?.id === "qicard" ? handleQiCardProcess : undefined
-        }
+        provider={QI_PROVIDER}
+        amount={DEFAULT_CONSULTATION_FEE}
+        onProcess={handleQiCardProcess}
         onCancel={() => setPaySheetOpen(false)}
         onSuccess={handlePaymentSuccess}
       />
     </KeyboardAvoidingView>
-  );
-}
-
-interface PayKindCardProps {
-  active: boolean;
-  theme: any;
-  isDark: boolean;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  label: string;
-  hint: string;
-  onPress: () => void;
-}
-function PayKindCard({ active, theme, isDark, icon, label, hint, onPress }: PayKindCardProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.payKindCard,
-        {
-          backgroundColor: active
-            ? addAlpha(theme.primary, 0.08)
-            : isDark
-              ? theme.backgroundSecondary
-              : "#F8FAFC",
-          borderColor: active ? theme.primary : theme.border,
-          borderWidth: active ? 2 : 1.5,
-        },
-      ]}
-    >
-      <MaterialCommunityIcons
-        name={icon}
-        size={26}
-        color={active ? theme.primary : theme.textSecondary}
-      />
-      <ThemedText type="small" style={{ fontWeight: "700", color: active ? theme.primary : theme.text, textAlign: "center" }}>
-        {label}
-      </ThemedText>
-      <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
-        {hint}
-      </ThemedText>
-    </Pressable>
   );
 }
 
@@ -433,46 +335,34 @@ const styles = StyleSheet.create({
   textarea: { height: 90, paddingTop: Spacing.md },
   disclaimer: { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.sm, borderWidth: 1 },
   submitBtn: {},
-  payKindRow: { flexDirection: "row-reverse" as const, gap: Spacing.md },
-  payKindCard: {
-    flex: 1,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  providerGrid: {
+  qiCard: {
     flexDirection: "row-reverse" as const,
-    flexWrap: "wrap" as const,
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
     gap: Spacing.md,
   },
-  providerCard: {
-    width: "31%" as const,
-    aspectRatio: 1,
+  qiIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qiCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  amountRow: {
+    flexDirection: "row-reverse" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.lg,
     borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    padding: Spacing.sm,
-    position: "relative" as const,
-  },
-  providerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  providerCheck: {
-    position: "absolute" as const,
-    top: 6,
-    left: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 1.5,
   },
 });
