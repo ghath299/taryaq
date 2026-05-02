@@ -26,7 +26,8 @@ import {
   type ProviderMeta,
   type PaymentDetails,
 } from "@/components/PaymentSheet";
-import { processQiCardPayment } from "@/lib/qicard";
+import { processPayment } from "@/lib/payment/qicard";
+import { holdPayment } from "@/lib/payment/escrow";
 
 const DEFAULT_CONSULTATION_FEE = 25000;
 const ERROR_COLOR = "#E53935";
@@ -85,7 +86,7 @@ export default function BookAppointmentScreen() {
     setIsSubmitting(true);
     try {
       const isPaid = paymentMethod !== "cash" && !!txId;
-      await createBooking(doctorId!, {
+      const bookingId = await createBooking(doctorId!, {
         patientName: patientName.trim(),
         accountOwnerName: user?.fullName || patientName.trim(),
         accountOwnerId: user?.id || user?.phoneNumber || "unknown",
@@ -96,7 +97,7 @@ export default function BookAppointmentScreen() {
         time: "",
         paymentMethod,
         paymentStatus:
-          paymentMethod === "cash" ? "غير مدفوع" : isPaid ? "مدفوع" : "قيد الدفع",
+          paymentMethod === "cash" ? "غير مدفوع" : "قيد الدفع",
         ...(txId
           ? { paymentTxId: txId, paymentPaidAt: Date.now() }
           : {}),
@@ -106,7 +107,7 @@ export default function BookAppointmentScreen() {
             paymentMethod === "cash"
               ? "unpaid"
               : isPaid
-                ? "paid"
+                ? "held"
                 : "pending",
           ...(txId ? { transactionId: txId, paidAt: Date.now() } : {}),
           ...(paymentMethod !== "cash"
@@ -114,11 +115,27 @@ export default function BookAppointmentScreen() {
             : {}),
         },
       });
+
+      // عند الدفع الإلكتروني الناجح: نُسجّل المعاملة في Escrow (محتجزة)
+      if (paymentMethod === "qicard" && txId) {
+        try {
+          await holdPayment({
+            clinicId: doctorId!,
+            bookingId,
+            patientId: user?.id || user?.phoneNumber || "unknown",
+            doctorId: doctorId || "",
+            amount: DEFAULT_CONSULTATION_FEE,
+            transactionId: txId,
+          });
+        } catch {
+          // فشل تسجيل الـ escrow لا يجب أن يمنع تأكيد الحجز للمستخدم
+        }
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const payLabel =
         paymentMethod === "cash"
           ? "الدفع نقداً عند الزيارة"
-          : "تم الدفع عبر كي كارد (Qi)";
+          : "تم الدفع عبر كي كارد (Qi) — المبلغ محتجز حتى تأكيد الموعد";
       Alert.alert(
         "تم الحجز بنجاح ✅",
         `تم إرسال طلب حجزك مع ${doctor.nameAr}.\n${payLabel}.\nسيتم التواصل معك لتأكيد الموعد.`,
@@ -132,7 +149,7 @@ export default function BookAppointmentScreen() {
   };
 
   const handleQiCardProcess = async (details: PaymentDetails) => {
-    const result = await processQiCardPayment({
+    const result = await processPayment({
       amount: DEFAULT_CONSULTATION_FEE,
       cardNumber: details.cardNumber || "",
       expiryDate: details.cardExpiry || "",
@@ -140,6 +157,7 @@ export default function BookAppointmentScreen() {
       patientId: user?.id || user?.phoneNumber || "unknown",
       bookingId: `${doctorId}_${Date.now()}`,
       doctorId: doctorId || "",
+      clinicId: doctorId || "",
     });
     return {
       success: result.success,

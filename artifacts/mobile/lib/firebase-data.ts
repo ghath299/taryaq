@@ -46,6 +46,38 @@ export type PaymentMethod =
 
 export type PaymentStatus = "غير مدفوع" | "قيد الدفع" | "مدفوع" | "فشل";
 
+export type EscrowStatus =
+  | "pending"
+  | "held"
+  | "paid"
+  | "refunded"
+  | "failed";
+
+export interface ClinicPaymentSettings {
+  electronicPaymentEnabled: boolean;
+  /** آخر 4 أرقام فقط من البطاقة (لا تخزّن الرقم الكامل على العميل) */
+  qiCardLast4?: string;
+  cardHolderName?: string;
+  merchantId?: string;
+  /** يجب أن يبقى فارغاً على العميل ويُحفظ على الخادم فقط */
+  apiKey?: string;
+  updatedAt?: number | object;
+}
+
+export interface FirebaseTransaction {
+  clinicId: string;
+  bookingId: string;
+  patientId: string;
+  doctorId: string;
+  amount: number;
+  currency: "IQD";
+  status: EscrowStatus;
+  method: "cash" | "qi_card";
+  createdAt: number | object;
+  updatedAt?: number | object;
+  refundId?: string;
+}
+
 export interface FirebaseBooking {
   patientName: string;
   accountOwnerName: string;
@@ -65,10 +97,12 @@ export interface FirebaseBooking {
   paymentPaidAt?: number | object;
   payment?: {
     method: PaymentMethod;
-    status: "paid" | "unpaid" | "pending" | "failed";
+    status: EscrowStatus | "unpaid";
     transactionId?: string;
     amount?: number;
     paidAt?: number | object;
+    releasedAt?: number | object;
+    refundedAt?: number | object;
   };
   createdAt?: number | object;
   completedAt?: number | object;
@@ -182,4 +216,64 @@ export async function updateBookingStatus(
     status,
     ...(extra || {}),
   });
+}
+
+/* -------------------- Clinic payment settings -------------------- */
+
+export async function getClinicPaymentSettings(
+  clinicId: string,
+): Promise<ClinicPaymentSettings | null> {
+  const snap = await get(ref(database, `clinics/${clinicId}/payment`));
+  return snap.exists() ? (snap.val() as ClinicPaymentSettings) : null;
+}
+
+export async function updateClinicPaymentSettings(
+  clinicId: string,
+  settings: Partial<ClinicPaymentSettings>,
+): Promise<void> {
+  await update(ref(database, `clinics/${clinicId}/payment`), {
+    ...settings,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToClinicPaymentSettings(
+  clinicId: string,
+  callback: (settings: ClinicPaymentSettings | null) => void,
+): () => void {
+  const r = ref(database, `clinics/${clinicId}/payment`);
+  const handler = (snap: DataSnapshot) =>
+    callback(snap.exists() ? (snap.val() as ClinicPaymentSettings) : null);
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
+
+/* -------------------- Transactions -------------------- */
+
+export async function getTransaction(
+  transactionId: string,
+): Promise<FirebaseTransaction | null> {
+  const snap = await get(ref(database, `transactions/${transactionId}`));
+  return snap.exists() ? (snap.val() as FirebaseTransaction) : null;
+}
+
+export function subscribeToClinicTransactions(
+  clinicId: string,
+  callback: (
+    transactions: Array<FirebaseTransaction & { id: string }>,
+  ) => void,
+): () => void {
+  const r = ref(database, "transactions");
+  const handler = (snap: DataSnapshot) => {
+    const out: Array<FirebaseTransaction & { id: string }> = [];
+    if (snap.exists()) {
+      const all = snap.val() as Record<string, FirebaseTransaction>;
+      for (const [id, tx] of Object.entries(all)) {
+        if (tx.clinicId === clinicId) out.push({ ...tx, id });
+      }
+    }
+    callback(out);
+  };
+  onValue(r, handler);
+  return () => off(r, "value", handler);
 }

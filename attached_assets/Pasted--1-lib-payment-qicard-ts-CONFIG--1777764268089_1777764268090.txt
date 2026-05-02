@@ -1,0 +1,71 @@
+جهّز بيئة الدفع الإلكتروني كاملة جاهزة للربط لاحقاً:
+
+1. ملف lib/payment/qicard.ts:
+- CONFIG جاهز لاستقبال Merchant ID + API Key + Secret Key
+- isTestMode: true (يحاكي الدفع بدون API حقيقي)
+- دالة processPayment() جاهزة للربط
+- دالة verifyPayment() للتحقق من الدفع
+- دالة refundPayment() للاسترداد
+- كل شي موثق بتعليقات عربية واضحة
+
+2. ملف lib/payment/escrow.ts:
+- نظام وسيط يحتجز الدفعة حتى يؤكد الطبيب الموعد
+- إذا رُفض الموعد → استرداد تلقائي للمريض
+- إذا قُبل → تحويل للطبيب بعد الزيارة
+
+3. Firebase Structure جاهز:
+/clinics/{clinicId}/payment:
+  - electronicPaymentEnabled: boolean
+  - qiCardNumber: string (مشفر AES-256)
+  - cardHolderName: string
+  - merchantId: string (فارغ لحد ما يجي)
+  - apiKey: string (فارغ لحد ما يجي)
+  - updatedAt: timestamp
+
+/clinics/{clinicId}/bookings/{bookingId}/payment:
+  - method: "cash" | "qi_card"
+  - status: "pending" | "held" | "paid" | "refunded" | "failed"
+  - amount: number
+  - transactionId: string
+  - paidAt: timestamp
+  - releasedAt: timestamp
+
+/transactions/{transactionId}:
+  - clinicId, bookingId, patientId, doctorId
+  - amount, currency: "IQD"
+  - status, method
+  - createdAt, updatedAt
+
+4. واجهة الدفع بتطبيق المريض:
+- خيارين: نقداً / Qi Card
+- عند اختيار Qi Card:
+  * حقل رقم البطاقة مع تنسيق تلقائي (XXXX XXXX XXXX XXXX)
+  * حقل تاريخ الانتهاء (MM/YY)
+  * حقل CVV (مخفي)
+  * شريط تقدم الدفع
+  * رسالة "جاري معالجة الدفع..."
+  * نجاح: أيقونة ✅ + رقم المعاملة
+  * فشل: رسالة خطأ واضحة + زر "حاول مجدداً"
+
+5. واجهة الاستقبال بتطبيق الدكتور في الإعدادات:
+- Toggle تفعيل/إيقاف الدفع الإلكتروني
+- حقل رقم Qi Card (يظهر آخر 4 أرقام فقط بعد الحفظ)
+- حقل اسم صاحب البطاقة
+- سجل الدفعات المستلمة
+- إشعار فوري عند استلام دفعة
+
+6. الأمان:
+- تشفير AES-256 لأرقام البطاقات
+- لا تُخزَّن بيانات CVV أبداً
+- HTTPS فقط
+- Rate limiting على محاولات الدفع (3 محاولات فقط)
+
+7. وضع التجربة (isTestMode = true):
+- أي رقم بطاقة يقبل
+- رقم 4444 4444 4444 4444 → دفع ناجح
+- رقم 4444 4444 4444 0000 → دفع فاشل (للاختبار)
+
+لما تحصل Merchant Account من Qi Card:
+- فقط أضف merchantId + apiKey + secretKey
+- غيّر isTestMode إلى false
+- كل شي يشتغل تلقائياً
