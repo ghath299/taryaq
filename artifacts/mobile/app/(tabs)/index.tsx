@@ -909,9 +909,10 @@ const styles = StyleSheet.create({
   },
   doctorPhoto: {
     width: "100%",
-    aspectRatio: 1,
+    height: 90,
     borderRadius: 12,
     marginBottom: 8,
+    resizeMode: "cover",
   },
   doctorName: {
     fontWeight: "700",
