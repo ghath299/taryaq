@@ -175,19 +175,8 @@ export default function HomeScreen() {
         >
           <Pressable
             style={[
-              styles.cameraBtn,
-              { backgroundColor: cardBg, borderColor: subtleBorder },
-            ]}
-            onPress={() => router.push("/search")}
-            accessibilityRole="button"
-            accessibilityLabel="تصوير وصفة بالكاميرا"
-          >
-            <Feather name="camera" size={20} color={textPrimary} />
-          </Pressable>
-          <Pressable
-            style={[
               styles.searchBar,
-              { backgroundColor: cardBg, borderColor: subtleBorder },
+              { backgroundColor: cardBg, borderColor: subtleBorder, flex: 1 },
             ]}
             onPress={() => router.push("/search")}
             accessibilityRole="search"
