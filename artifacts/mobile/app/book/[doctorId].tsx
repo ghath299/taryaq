@@ -21,6 +21,8 @@ import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 import * as Haptics from "expo-haptics";
 
+const ERROR_COLOR = "#E53935";
+
 export default function BookAppointmentScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -32,23 +34,26 @@ export default function BookAppointmentScreen() {
   const [patientName, setPatientName] = useState(user?.fullName || "");
   const [age, setAge] = useState("");
   const [reason, setReason] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const validateForm = () => {
-    if (!patientName.trim()) return "اسم المريض مطلوب";
-    if (!age || isNaN(Number(age)) || Number(age) < 1 || Number(age) > 120) return "العمر غير صحيح";
-    if (!reason.trim()) return "سبب الزيارة مطلوب";
-    if (!date.trim()) return "التاريخ مطلوب";
-    if (!time.trim()) return "الوقت مطلوب";
-    return null;
-  };
+  const [errors, setErrors] = useState<{ name?: boolean; age?: boolean }>({});
 
   const handleSubmit = async () => {
-    const err = validateForm();
-    if (err) { Alert.alert("خطأ في البيانات", err); return; }
-    if (!doctor) { Alert.alert("خطأ", "الطبيب غير موجود"); return; }
+    const nameMissing = !patientName.trim();
+    const ageNum = Number(age);
+    const ageInvalid = !age || isNaN(ageNum) || ageNum < 1 || ageNum > 120;
+
+    if (nameMissing || ageInvalid) {
+      setErrors({ name: nameMissing, age: ageInvalid });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+
+    setErrors({});
+    if (!doctor) {
+      Alert.alert("خطأ", "الطبيب غير موجود");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -56,17 +61,17 @@ export default function BookAppointmentScreen() {
         patientName: patientName.trim(),
         accountOwnerName: user?.fullName || patientName.trim(),
         accountOwnerId: user?.id || user?.phoneNumber || "unknown",
-        age: Number(age),
+        age: ageNum,
         phone: user?.phoneNumber || "",
         reason: reason.trim(),
-        date: date.trim(),
-        time: time.trim(),
+        date: "",
+        time: "",
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         "تم الحجز بنجاح ✅",
         `تم إرسال طلب حجزك مع ${doctor.nameAr}. سيتم التواصل معك لتأكيد الموعد.`,
-        [{ text: "حسناً", onPress: () => router.back() }]
+        [{ text: "حسناً", onPress: () => router.back() }],
       );
     } catch (e) {
       Alert.alert("خطأ", "فشل إرسال طلب الحجز. حاول مرة أخرى.");
@@ -75,15 +80,19 @@ export default function BookAppointmentScreen() {
     }
   };
 
-  const inputStyle = [
-    styles.input,
-    {
-      backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
-      borderColor: theme.border,
-      color: theme.text,
-      fontFamily: "Tajawal_400Regular",
-    },
-  ];
+  const baseInput = {
+    backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
+    color: theme.text,
+    fontFamily: "Tajawal_400Regular",
+  };
+
+  const inputBorder = (hasError?: boolean) => ({
+    borderColor: hasError ? ERROR_COLOR : theme.border,
+  });
+
+  const labelColor = (hasError?: boolean) => ({
+    color: hasError ? ERROR_COLOR : theme.textSecondary,
+  });
 
   return (
     <KeyboardAvoidingView
@@ -110,16 +119,52 @@ export default function BookAppointmentScreen() {
 
         <Animated.View entering={FadeInUp.delay(150).duration(350)} style={styles.section}>
           <ThemedText type="h4" style={styles.sectionTitle}>بيانات المريض</ThemedText>
+
           <View style={styles.field}>
-            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>اسم المريض *</ThemedText>
-            <TextInput value={patientName} onChangeText={setPatientName} placeholder="الاسم الكامل" placeholderTextColor={theme.textSecondary} style={inputStyle} textAlign="right" />
+            <ThemedText type="small" style={[styles.label, labelColor(errors.name)]}>
+              اسم المريض *
+            </ThemedText>
+            <TextInput
+              value={patientName}
+              onChangeText={(t) => {
+                setPatientName(t);
+                if (errors.name && t.trim()) setErrors((e) => ({ ...e, name: false }));
+              }}
+              placeholder="الاسم الكامل"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, baseInput, inputBorder(errors.name)]}
+              textAlign="right"
+            />
           </View>
+
           <View style={styles.field}>
-            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>العمر *</ThemedText>
-            <TextInput value={age} onChangeText={setAge} placeholder="25" keyboardType="number-pad" maxLength={3} placeholderTextColor={theme.textSecondary} style={[inputStyle, { textAlign: "right" }]} textAlign="right" />
+            <ThemedText type="small" style={[styles.label, labelColor(errors.age)]}>
+              العمر *
+            </ThemedText>
+            <TextInput
+              value={age}
+              onChangeText={(t) => {
+                setAge(t);
+                if (errors.age) {
+                  const n = Number(t);
+                  if (t && !isNaN(n) && n >= 1 && n <= 120) {
+                    setErrors((e) => ({ ...e, age: false }));
+                  }
+                }
+              }}
+              placeholder="25"
+              keyboardType="number-pad"
+              maxLength={3}
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, baseInput, inputBorder(errors.age), { textAlign: "right" }]}
+              textAlign="right"
+            />
           </View>
+
           <View style={styles.field}>
-            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>سبب الزيارة *</ThemedText>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+              سبب الزيارة (اختياري)
+            </ThemedText>
             <TextInput
               value={reason}
               onChangeText={setReason}
@@ -127,35 +172,21 @@ export default function BookAppointmentScreen() {
               multiline
               numberOfLines={3}
               placeholderTextColor={theme.textSecondary}
-              style={[inputStyle, styles.textarea]}
+              style={[styles.input, styles.textarea, baseInput, inputBorder(false)]}
               textAlignVertical="top"
               textAlign="right"
             />
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInUp.delay(250).duration(350)} style={styles.section}>
-          <ThemedText type="h4" style={styles.sectionTitle}>الموعد المطلوب</ThemedText>
-          <View style={styles.fieldRow}>
-            <View style={[styles.field, { flex: 1 }]}>
-              <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>التاريخ *</ThemedText>
-              <TextInput value={date} onChangeText={setDate} placeholder="2025/01/01" placeholderTextColor={theme.textSecondary} style={inputStyle} textAlign="right" />
-            </View>
-            <View style={[styles.field, { flex: 1 }]}>
-              <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>الوقت *</ThemedText>
-              <TextInput value={time} onChangeText={setTime} placeholder="10:00 ص" placeholderTextColor={theme.textSecondary} style={inputStyle} textAlign="right" />
-            </View>
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(350).duration(350)} style={[styles.disclaimer, { backgroundColor: addAlpha(theme.primary, 0.06), borderColor: addAlpha(theme.primary, 0.2) }]}>
+        <Animated.View entering={FadeInUp.delay(250).duration(350)} style={[styles.disclaimer, { backgroundColor: addAlpha(theme.primary, 0.06), borderColor: addAlpha(theme.primary, 0.2) }]}>
           <Feather name="info" size={14} color={theme.primary} style={{ marginLeft: 6 }} />
           <ThemedText type="caption" style={{ color: theme.textSecondary, flex: 1, textAlign: "right" }}>
-            سيتم مراجعة طلبك من قبل العيادة والتواصل معك لتأكيد أو تعديل الموعد
+            سيتم مراجعة طلبك من قبل العيادة والتواصل معك لتأكيد الموعد
           </ThemedText>
         </Animated.View>
 
-        <Animated.View entering={FadeInUp.delay(400).duration(350)}>
+        <Animated.View entering={FadeInUp.delay(350).duration(350)}>
           <Button onPress={handleSubmit} disabled={isSubmitting} style={styles.submitBtn}>
             {isSubmitting ? "جاري الإرسال..." : "إرسال طلب الحجز"}
           </Button>
@@ -173,7 +204,6 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.md },
   sectionTitle: { textAlign: "right", fontWeight: "700" },
   field: {},
-  fieldRow: { flexDirection: "row-reverse" as const, gap: Spacing.md },
   label: { textAlign: "right", marginBottom: 4, fontWeight: "500" },
   input: { height: Spacing.inputHeight, borderRadius: BorderRadius.sm, borderWidth: 1.5, paddingHorizontal: Spacing.lg, fontSize: 16 },
   textarea: { height: 90, paddingTop: Spacing.md },
