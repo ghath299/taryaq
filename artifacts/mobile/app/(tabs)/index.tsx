@@ -148,7 +148,11 @@ export default function HomeScreen() {
             hitSlop={6}
           >
             <Image
-              source={require("@/assets/images/user-avatar.png")}
+              source={
+                user?.avatarUri
+                  ? { uri: user.avatarUri }
+                  : require("@/assets/images/user-avatar.png")
+              }
               style={styles.avatarImg}
             />
           </Pressable>

@@ -102,7 +102,7 @@ export default function ProfileScreen() {
           icon: "user",
           iconColor: "#3FC8E5",
           bg: "#E8F8FC",
-          onPress: () => Alert.alert("قريباً", "تعديل المعلومات الشخصية"),
+          onPress: () => router.push("/edit-profile"),
         },
         {
           id: "location",
@@ -321,7 +321,11 @@ export default function ProfileScreen() {
               <View style={styles.profileTopRow}>
                 <View style={styles.avatarRing}>
                   <Image
-                    source={require("@/assets/images/user-avatar.png")}
+                    source={
+                      user?.avatarUri
+                        ? { uri: user.avatarUri }
+                        : require("@/assets/images/user-avatar.png")
+                    }
                     style={styles.profileAvatar}
                   />
                   <View style={styles.verifiedDot}>

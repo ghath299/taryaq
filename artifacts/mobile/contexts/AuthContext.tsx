@@ -18,6 +18,7 @@ export interface AuthUser {
   role: UserRole;
   locationGranted: boolean;
   isVerified: boolean;
+  avatarUri?: string;
 }
 
 interface OTPResult {
