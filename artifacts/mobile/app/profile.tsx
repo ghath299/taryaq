@@ -342,19 +342,12 @@ export default function ProfileScreen() {
                         ? "طبيب"
                         : user?.role === "pharmacist"
                           ? "صيدلي"
-                          : "مريض"}
+                          : "مستخدم"}
                     </ThemedText>
                   </View>
                 </View>
               </View>
 
-              <View style={styles.statsRow}>
-                <Stat label="حجز" value="3" />
-                <View style={styles.statDivider} />
-                <Stat label="طلب" value="7" />
-                <View style={styles.statDivider} />
-                <Stat label="إشعار" value="3" />
-              </View>
             </LinearGradient>
           </Animated.View>
 
