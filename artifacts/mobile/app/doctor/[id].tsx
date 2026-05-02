@@ -19,14 +19,17 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 
-const BALY_PLAY_SEARCH = "https://play.google.com/store/search?q=baly&c=apps";
+const BALY_PACKAGE = "app.baly.passenger";
+const BALY_PLAY_STORE = `https://play.google.com/store/apps/details?id=${BALY_PACKAGE}`;
 const BALY_APP_STORE_SEARCH = "https://apps.apple.com/iq/search?term=baly";
 
-const openBaly = async (lat: number, lng: number, name: string) => {
-  const dname = encodeURIComponent(name);
-
-  // Pickup location (best-effort)
-  let origin = "";
+const openBaly = async (
+  clinicLat: number,
+  clinicLng: number,
+  clinicName: string,
+) => {
+  // Best-effort pickup location
+  let pickup = "";
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
@@ -36,44 +39,29 @@ const openBaly = async (lat: number, lng: number, name: string) => {
           accuracy: Location.Accuracy.Balanced,
         }));
       if (loc?.coords) {
-        origin = `&slat=${loc.coords.latitude}&slng=${loc.coords.longitude}`;
+        pickup = `pickup_lat=${loc.coords.latitude}&pickup_lng=${loc.coords.longitude}&`;
       }
     }
   } catch {}
 
-  const query = `dlat=${lat}&dlng=${lng}&dname=${dname}${origin}`;
+  const dname = encodeURIComponent(clinicName);
+  const balyUrl =
+    `baly://ride?${pickup}` +
+    `dropoff_lat=${clinicLat}&dropoff_lng=${clinicLng}&dropoff_name=${dname}`;
 
-  // Possible deep-link schemes Baly may register on the device
-  const schemeCandidates = [
-    `baly://ride?${query}`,
-    `baly://ride/new?${query}`,
-    `balyiq://ride?${query}`,
-    `balyconsumer://ride?${query}`,
-    `iq.baly.consumer://ride?${query}`,
-    `iq.baly.passenger://ride?${query}`,
-  ];
-
-  // Try opening each candidate directly. On Android, openURL throws if no
-  // app handles the scheme; we silently move to the next candidate.
-  for (const url of schemeCandidates) {
-    try {
-      // canOpenURL is unreliable on Android 11+ without proper queries entries,
-      // so on Android we just attempt openURL and let it throw on failure.
-      if (Platform.OS === "ios") {
-        const can = await Linking.canOpenURL(url);
-        if (!can) continue;
-      }
-      await Linking.openURL(url);
-      return;
-    } catch {}
-  }
-
-  // No Baly scheme handled the request — open the store SEARCH page (not a
-  // specific package id, which can 404 if the id is wrong).
-  const storeSearch =
-    Platform.OS === "ios" ? BALY_APP_STORE_SEARCH : BALY_PLAY_SEARCH;
   try {
-    await Linking.openURL(storeSearch);
+    const canOpen = await Linking.canOpenURL(balyUrl);
+    if (canOpen) {
+      await Linking.openURL(balyUrl);
+      return;
+    }
+  } catch {}
+
+  // App not installed → open store
+  const storeUrl =
+    Platform.OS === "ios" ? BALY_APP_STORE_SEARCH : BALY_PLAY_STORE;
+  try {
+    await Linking.openURL(storeUrl);
   } catch {}
 };
 

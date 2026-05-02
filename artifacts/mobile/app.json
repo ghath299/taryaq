@@ -18,13 +18,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
-        "LSApplicationQueriesSchemes": [
-          "baly",
-          "balyiq",
-          "balyconsumer",
-          "iq.baly.consumer",
-          "waze"
-        ]
+        "LSApplicationQueriesSchemes": ["baly", "waze"]
       }
     },
     "android": {
@@ -35,9 +29,9 @@
         "VIBRATE"
       ],
       "queries": [
+        { "package": "app.baly.passenger" },
+        { "package": "com.waze" },
         { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "baly" }] }] },
-        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "balyiq" }] }] },
-        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "balyconsumer" }] }] },
         { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "waze" }] }] }
       ]
     },
