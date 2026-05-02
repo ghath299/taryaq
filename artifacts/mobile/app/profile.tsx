@@ -155,16 +155,6 @@ export default function ProfileScreen() {
           hideChevron: true,
         },
         {
-          id: "language",
-          label: "اللغة",
-          icon: "globe",
-          iconColor: "#0EA5E9",
-          bg: "#E5F4FE",
-          trailingText: "العربية",
-          hideChevron: true,
-          onPress: () => Alert.alert("اللغة", "العربية هي اللغة الوحيدة المدعومة حالياً"),
-        },
-        {
           id: "notif-toggle",
           label: "تفعيل الإشعارات",
           icon: "bell",
