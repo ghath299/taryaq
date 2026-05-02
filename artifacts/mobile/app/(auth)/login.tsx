@@ -60,11 +60,11 @@ export default function LoginScreen() {
     }
   };
 
-  const inputBg = isDark ? "#161B22" : "#FFFFFF";
+  const screenBg = isDark ? "#0A0F1A" : "#FFFFFF";
+  const inputBg = isDark ? "#161B22" : "#F7F8FB";
   const inputBorder = isDark ? "#21262D" : "#EFEFEF";
   const buttonColor = "#1F40C8";
   const titleColor = isDark ? "#5EDFFF" : "#1F40C8";
-  const screenBg = isDark ? "#0D1117" : "#F7F8FB";
 
   return (
     <KeyboardAvoidingView
@@ -74,7 +74,7 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 },
+          { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
