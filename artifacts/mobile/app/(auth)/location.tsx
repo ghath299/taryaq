@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet, ScrollView, Platform, Alert } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
@@ -61,9 +61,9 @@ export default function LocationScreen() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.container, { paddingTop: 20, paddingBottom: insets.bottom + 20 }]}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={ZoomIn.duration(600)} style={styles.heroSection}>
@@ -108,7 +108,7 @@ export default function LocationScreen() {
           </Button>
         </Animated.View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

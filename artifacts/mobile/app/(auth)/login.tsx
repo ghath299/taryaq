@@ -10,7 +10,7 @@ import {
   Image,
   Pressable,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
@@ -67,6 +67,7 @@ export default function LoginScreen() {
   const titleColor = isDark ? "#5EDFFF" : "#1F40C8";
 
   return (
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: screenBg }}>
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: screenBg }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -74,7 +75,7 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 },
+          { paddingTop: 24, paddingBottom: insets.bottom + 24 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -221,6 +222,7 @@ export default function LoginScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

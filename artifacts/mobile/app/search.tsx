@@ -7,7 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 import { useRouter } from "expo-router";
@@ -68,11 +68,12 @@ export default function SearchScreen() {
   );
 
   return (
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 12) }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : 12 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="x" size={22} color={theme.text} />
         </Pressable>
@@ -121,6 +122,7 @@ export default function SearchScreen() {
         />
       )}
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

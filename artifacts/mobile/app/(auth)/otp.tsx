@@ -8,7 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInUp, useAnimatedStyle, useSharedValue, withSequence, withTiming } from "react-native-reanimated";
@@ -124,11 +124,12 @@ export default function OTPScreen() {
   };
 
   return (
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
+      <View style={[styles.container, { paddingTop: 20, paddingBottom: insets.bottom + 20 }]}>
         <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
           <LinearGradient colors={[theme.primary, theme.primaryDark]} style={styles.iconBubble}>
             <Feather name="message-circle" size={36} color="#FFF" />
@@ -208,6 +209,7 @@ export default function OTPScreen() {
         </Animated.View>
       </View>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

@@ -8,7 +8,7 @@ import {
   TextInput,
   Platform,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -54,7 +54,6 @@ const quickServices: QuickService[] = [
 ];
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
@@ -88,7 +87,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: screenBg }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: screenBg }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: tabBarHeight + 80 }}
@@ -98,7 +97,7 @@ export default function HomeScreen() {
           entering={FadeIn.duration(300)}
           style={[
             styles.header,
-            { paddingTop: Platform.OS === "web" ? 24 : insets.top + 8 },
+            { paddingTop: Platform.OS === "web" ? 24 : 12 },
           ]}
         >
           <View style={styles.bellWrap}>
@@ -628,7 +627,7 @@ export default function HomeScreen() {
         visible={emergencyVisible}
         onClose={() => setEmergencyVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
