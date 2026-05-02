@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -18,24 +19,76 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 
+const BALY_PACKAGE = "iq.baly.consumer";
+const BALY_PLAY_STORE = `https://play.google.com/store/apps/details?id=${BALY_PACKAGE}`;
+const BALY_APP_STORE = "https://apps.apple.com/iq/app/baly/id1488601200";
+
 const openBaly = async (lat: number, lng: number, name: string) => {
   const dname = encodeURIComponent(name);
-  const balyUrl = `baly://ride?dlat=${lat}&dlng=${lng}&dname=${dname}`;
-  const balyWeb = `https://baly.iq/ride?dlat=${lat}&dlng=${lng}&dname=${dname}`;
+
+  // Try to read user's current position to pass as pickup (best effort, optional)
+  let origin = "";
   try {
-    const can = await Linking.canOpenURL(balyUrl);
-    if (can) {
-      await Linking.openURL(balyUrl);
-      return;
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status === "granted") {
+      const loc = await Location.getLastKnownPositionAsync();
+      const final =
+        loc ||
+        (await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }));
+      if (final?.coords) {
+        origin = `&slat=${final.coords.latitude}&slng=${final.coords.longitude}`;
+      }
     }
   } catch {}
-  try {
-    await Linking.openURL(balyWeb);
-  } catch {
-    await Linking.openURL(
-      "https://play.google.com/store/apps/details?id=com.baly.passenger",
-    );
+
+  const query = `dlat=${lat}&dlng=${lng}&dname=${dname}${origin}`;
+
+  // Possible deep-link schemes Baly might register on the device
+  const schemeCandidates = [
+    `baly://ride?${query}`,
+    `balyiq://ride?${query}`,
+    `balyconsumer://ride?${query}`,
+    `iq.baly.consumer://ride?${query}`,
+  ];
+
+  if (Platform.OS === "android") {
+    // Use Android Intent URL: opens app if installed, otherwise Play Store
+    const intentUrl =
+      `intent://ride?${query}` +
+      `#Intent;scheme=baly;package=${BALY_PACKAGE};` +
+      `S.browser_fallback_url=${encodeURIComponent(BALY_PLAY_STORE)};end`;
+    try {
+      await Linking.openURL(intentUrl);
+      return;
+    } catch {}
+
+    // Try alternate schemes too, in case the registered scheme is different
+    for (const url of schemeCandidates) {
+      try {
+        const can = await Linking.canOpenURL(url);
+        if (can) {
+          await Linking.openURL(url);
+          return;
+        }
+      } catch {}
+    }
+    await Linking.openURL(BALY_PLAY_STORE);
+    return;
   }
+
+  // iOS: try each scheme in turn
+  for (const url of schemeCandidates) {
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) {
+        await Linking.openURL(url);
+        return;
+      }
+    } catch {}
+  }
+  await Linking.openURL(BALY_APP_STORE);
 };
 
 const openWaze = (lat: number, lng: number) => {
