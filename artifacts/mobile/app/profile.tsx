@@ -107,23 +107,6 @@ export default function ProfileScreen() {
           bg: "#E8F8FC",
           onPress: () => router.push("/edit-profile"),
         },
-        {
-          id: "location",
-          label: "تغيير الموقع",
-          icon: "map-pin",
-          iconColor: "#14B8A6",
-          bg: "#E6FAF6",
-          onPress: () => router.push("/(auth)/location"),
-        },
-        {
-          id: "verify",
-          label: "حالة التحقق",
-          icon: "shield",
-          iconColor: "#10B981",
-          bg: "#E7F8EF",
-          trailingText: "موثّق",
-          hideChevron: true,
-        },
       ],
     },
     {
