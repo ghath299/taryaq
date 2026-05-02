@@ -81,8 +81,8 @@ export const doctors = [
   },
   {
     id: "3",
-    nameAr: "د. محمد كريم الشمري",
-    nameEn: "Dr. Mohammed Kareem Al-Shammari",
+    nameAr: "د. علي كريم",
+    nameEn: "Dr. Ali Kareem",
     specialtyId: "4",
     specialtyAr: "طب قلب",
     specialtyEn: "Cardiology",

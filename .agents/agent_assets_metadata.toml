@@ -48,3 +48,15 @@ id = "5jHjNy0fyXf2a_mTTRZq-"
 uri = "file://artifacts/mobile/assets/images/health-shield.png"
 type = "image"
 title = "health shield 3d"
+
+[[generated]]
+id = "oy3MpwLL30q5tZM7oug21"
+uri = "file://artifacts/mobile/assets/images/user-avatar.png"
+type = "image"
+title = "young man avatar"
+
+[[generated]]
+id = "aIkVdNYom-3JfXnxcKmpQ"
+uri = "file://artifacts/mobile/assets/images/water-glass.png"
+type = "image"
+title = "water glass with leaves"
