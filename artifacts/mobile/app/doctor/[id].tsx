@@ -21,7 +21,8 @@ import { doctors } from "@/data/mockData";
 
 const BALY_PACKAGE = "iq.baly.consumer";
 const BALY_PLAY_STORE = `https://play.google.com/store/apps/details?id=${BALY_PACKAGE}`;
-const BALY_APP_STORE = "https://apps.apple.com/iq/app/baly/id1488601200";
+const BALY_PLAY_SEARCH = "https://play.google.com/store/search?q=baly%20iraq&c=apps";
+const BALY_APP_STORE_SEARCH = "https://apps.apple.com/iq/search?term=baly";
 
 const openBaly = async (lat: number, lng: number, name: string) => {
   const dname = encodeURIComponent(name);
@@ -54,7 +55,7 @@ const openBaly = async (lat: number, lng: number, name: string) => {
   ];
 
   if (Platform.OS === "android") {
-    // Use Android Intent URL: opens app if installed, otherwise Play Store
+    // Use Android Intent URL: opens the Baly app if installed, otherwise Play Store
     const intentUrl =
       `intent://ride?${query}` +
       `#Intent;scheme=baly;package=${BALY_PACKAGE};` +
@@ -64,7 +65,6 @@ const openBaly = async (lat: number, lng: number, name: string) => {
       return;
     } catch {}
 
-    // Try alternate schemes too, in case the registered scheme is different
     for (const url of schemeCandidates) {
       try {
         const can = await Linking.canOpenURL(url);
@@ -74,11 +74,15 @@ const openBaly = async (lat: number, lng: number, name: string) => {
         }
       } catch {}
     }
-    await Linking.openURL(BALY_PLAY_STORE);
+    try {
+      await Linking.openURL(BALY_PLAY_STORE);
+    } catch {
+      await Linking.openURL(BALY_PLAY_SEARCH);
+    }
     return;
   }
 
-  // iOS: try each scheme in turn
+  // iOS: try each candidate scheme; if none registered, open App Store search
   for (const url of schemeCandidates) {
     try {
       const can = await Linking.canOpenURL(url);
@@ -88,7 +92,7 @@ const openBaly = async (lat: number, lng: number, name: string) => {
       }
     } catch {}
   }
-  await Linking.openURL(BALY_APP_STORE);
+  await Linking.openURL(BALY_APP_STORE_SEARCH);
 };
 
 const openWaze = (lat: number, lng: number) => {
