@@ -21,7 +21,14 @@ import { createBooking, type PaymentMethod } from "@/lib/firebase-data";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { doctors } from "@/data/mockData";
 import * as Haptics from "expo-haptics";
-import { PaymentSheet, type ProviderMeta } from "@/components/PaymentSheet";
+import {
+  PaymentSheet,
+  type ProviderMeta,
+  type PaymentDetails,
+} from "@/components/PaymentSheet";
+import { processQiCardPayment } from "@/lib/qicard";
+
+const DEFAULT_CONSULTATION_FEE = 25000; // د.ع — placeholder
 
 const ERROR_COLOR = "#E53935";
 
@@ -91,6 +98,7 @@ export default function BookAppointmentScreen() {
     }
     setIsSubmitting(true);
     try {
+      const isPaid = paymentMethod !== "cash" && !!txId;
       await createBooking(doctorId!, {
         patientName: patientName.trim(),
         accountOwnerName: user?.fullName || patientName.trim(),
@@ -101,10 +109,24 @@ export default function BookAppointmentScreen() {
         date: "",
         time: "",
         paymentMethod,
-        paymentStatus: paymentMethod === "cash" ? "غير مدفوع" : "مدفوع",
+        paymentStatus:
+          paymentMethod === "cash" ? "غير مدفوع" : isPaid ? "مدفوع" : "قيد الدفع",
         ...(txId
           ? { paymentTxId: txId, paymentPaidAt: Date.now() }
           : {}),
+        payment: {
+          method: paymentMethod,
+          status:
+            paymentMethod === "cash"
+              ? "unpaid"
+              : isPaid
+                ? "paid"
+                : "pending",
+          ...(txId ? { transactionId: txId, paidAt: Date.now() } : {}),
+          ...(paymentMethod !== "cash"
+            ? { amount: DEFAULT_CONSULTATION_FEE }
+            : {}),
+        },
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const payLabel =
@@ -121,6 +143,23 @@ export default function BookAppointmentScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleQiCardProcess = async (details: PaymentDetails) => {
+    const result = await processQiCardPayment({
+      amount: DEFAULT_CONSULTATION_FEE,
+      cardNumber: details.cardNumber || "",
+      expiryDate: details.cardExpiry || "",
+      cvv: details.cardCvv || "",
+      patientId: user?.id || user?.phoneNumber || "unknown",
+      bookingId: `${doctorId}_${Date.now()}`,
+      doctorId: doctorId || "",
+    });
+    return {
+      success: result.success,
+      transactionId: result.transactionId,
+      message: result.message,
+    };
   };
 
   const handleSubmit = async () => {
@@ -327,6 +366,12 @@ export default function BookAppointmentScreen() {
       <PaymentSheet
         visible={paySheetOpen}
         provider={selectedProvider}
+        amount={
+          selectedProvider ? DEFAULT_CONSULTATION_FEE : undefined
+        }
+        onProcess={
+          selectedProvider?.id === "qicard" ? handleQiCardProcess : undefined
+        }
         onCancel={() => setPaySheetOpen(false)}
         onSuccess={handlePaymentSuccess}
       />

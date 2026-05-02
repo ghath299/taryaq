@@ -62,9 +62,17 @@ export default function BookingsScreen() {
       <Animated.View entering={FadeInUp.delay(index * 60).duration(300)}>
         <Pressable android_ripple={{ color: "transparent" }} style={[styles.card, { backgroundColor: theme.card || theme.backgroundDefault }]}>
           <View style={styles.cardHeader}>
-            <View style={[styles.statusBadge, { backgroundColor: addAlpha(statusColor, 0.15) }]}>
-              <Feather name={statusIcon} size={13} color={statusColor} />
-              <ThemedText type="caption" style={{ color: statusColor, fontWeight: "700", marginRight: 4 }}>{item.status}</ThemedText>
+            <View style={styles.badgesRow}>
+              <View style={[styles.statusBadge, { backgroundColor: addAlpha(statusColor, 0.15) }]}>
+                <Feather name={statusIcon} size={13} color={statusColor} />
+                <ThemedText type="caption" style={{ color: statusColor, fontWeight: "700", marginRight: 4 }}>{item.status}</ThemedText>
+              </View>
+              {item.payment?.status === "paid" || item.paymentStatus === "مدفوع" ? (
+                <View style={[styles.statusBadge, { backgroundColor: addAlpha("#16A34A", 0.15) }]}>
+                  <Feather name="credit-card" size={12} color="#16A34A" />
+                  <ThemedText type="caption" style={{ color: "#16A34A", fontWeight: "700", marginRight: 4 }}>مدفوع</ThemedText>
+                </View>
+              ) : null}
             </View>
             <View style={styles.clinicRow}>
               <ThemedText type="h4" style={{ fontWeight: "700", textAlign: "right" }} numberOfLines={1}>{item.patientName}</ThemedText>
@@ -123,6 +131,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: BorderRadius.xl, padding: Spacing.xl },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: Spacing.md },
   clinicRow: { flex: 1, alignItems: "flex-end", marginLeft: Spacing.sm },
+  badgesRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   statusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: BorderRadius.full },
   divider: { height: 1, marginVertical: Spacing.sm },
   details: { gap: Spacing.xs },

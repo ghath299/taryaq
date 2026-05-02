@@ -31,12 +31,30 @@ export interface ProviderMeta {
   kind: ProviderKind;
 }
 
+export interface PaymentDetails {
+  cardNumber?: string;
+  cardExpiry?: string;
+  cardCvv?: string;
+  walletPhone?: string;
+  walletPin?: string;
+}
+
 interface PaymentSheetProps {
   visible: boolean;
   provider: ProviderMeta | null;
   amount?: number;
   onCancel: () => void;
   onSuccess: (txId: string) => void;
+  /**
+   * Optional custom processor. If provided, PaymentSheet will call this
+   * instead of using the built-in simulation. Must return success + txId
+   * or throw / return failure with a message.
+   */
+  onProcess?: (details: PaymentDetails) => Promise<{
+    success: boolean;
+    transactionId?: string;
+    message?: string;
+  }>;
 }
 
 export function PaymentSheet({
@@ -45,6 +63,7 @@ export function PaymentSheet({
   amount,
   onCancel,
   onSuccess,
+  onProcess,
 }: PaymentSheetProps) {
   const { theme, isDark } = useTheme();
 
@@ -59,6 +78,7 @@ export function PaymentSheet({
 
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [stage, setStage] = useState<"form" | "processing" | "success">("form");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -68,6 +88,7 @@ export function PaymentSheet({
       setCardExpiry("");
       setCardCvv("");
       setErrors({});
+      setErrorMsg(null);
       setStage("form");
     }
   }, [visible]);
@@ -107,15 +128,43 @@ export function PaymentSheet({
       return;
     }
     setStage("processing");
+    setErrorMsg(null);
     Haptics.selectionAsync();
 
-    // Simulated payment processing.
-    // TODO: replace with real merchant API call (e.g. ZainCash, FastPay, Qi).
-    await new Promise((r) => setTimeout(r, 1800));
+    let txId = `TX${Date.now()}`;
+    let ok = true;
+    let message: string | undefined;
+
+    if (onProcess) {
+      try {
+        const result = await onProcess({
+          cardNumber: cardNumber.replace(/\s/g, ""),
+          cardExpiry,
+          cardCvv,
+          walletPhone,
+          walletPin,
+        });
+        ok = !!result.success;
+        message = result.message;
+        if (result.transactionId) txId = result.transactionId;
+      } catch (e: any) {
+        ok = false;
+        message = e?.message || "تعذّر إتمام الدفع";
+      }
+    } else {
+      // Built-in simulation for providers without a custom processor
+      await new Promise((r) => setTimeout(r, 1800));
+    }
+
+    if (!ok) {
+      setStage("form");
+      setErrorMsg(message || "فشلت عملية الدفع. حاول مرة أخرى.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
 
     setStage("success");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const txId = `TX${Date.now()}`;
     setTimeout(() => onSuccess(txId), 900);
   };
 
@@ -396,8 +445,34 @@ export function PaymentSheet({
 
               {stage === "form" ? (
                 <View style={{ marginTop: Spacing.xl, gap: Spacing.md }}>
+                  {errorMsg ? (
+                    <View
+                      style={[
+                        styles.errorBanner,
+                        {
+                          backgroundColor: addAlpha(ERROR_COLOR, 0.1),
+                          borderColor: addAlpha(ERROR_COLOR, 0.3),
+                        },
+                      ]}
+                    >
+                      <Feather
+                        name="alert-circle"
+                        size={14}
+                        color={ERROR_COLOR}
+                        style={{ marginLeft: 6 }}
+                      />
+                      <ThemedText
+                        type="caption"
+                        style={{ color: ERROR_COLOR, flex: 1, textAlign: "right" }}
+                      >
+                        {errorMsg}
+                      </ThemedText>
+                    </View>
+                  ) : null}
                   <Button onPress={handlePay} style={{}}>
-                    تأكيد الدفع
+                    {amount
+                      ? `ادفع ${amount.toLocaleString("ar-IQ")} د.ع`
+                      : "ادفع الآن"}
                   </Button>
                   <Pressable onPress={onCancel} style={styles.cancelBtn}>
                     <ThemedText
@@ -519,6 +594,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   secureNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+  },
+  errorBanner: {
     flexDirection: "row",
     alignItems: "center",
     padding: Spacing.md,

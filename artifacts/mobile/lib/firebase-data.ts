@@ -63,6 +63,13 @@ export interface FirebaseBooking {
   paymentStatus?: PaymentStatus;
   paymentTxId?: string;
   paymentPaidAt?: number | object;
+  payment?: {
+    method: PaymentMethod;
+    status: "paid" | "unpaid" | "pending" | "failed";
+    transactionId?: string;
+    amount?: number;
+    paidAt?: number | object;
+  };
   createdAt?: number | object;
   completedAt?: number | object;
   enteredAt?: number | object;
