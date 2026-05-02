@@ -108,12 +108,6 @@ export default function DoctorDetailScreen() {
             <ThemedText type="body" style={{ color: theme.text, textAlign: "right", flex: 1 }}>{doctor.provinceAr} • {doctor.districtAr}</ThemedText>
             <Feather name="globe" size={16} color={theme.textSecondary} style={{ marginLeft: 6 }} />
           </View>
-          {doctor.phone ? (
-            <Pressable onPress={() => Linking.openURL(`tel:${doctor.phone}`)} style={styles.infoRow}>
-              <ThemedText type="body" style={{ color: theme.primary, textAlign: "right", flex: 1 }}>{doctor.phone}</ThemedText>
-              <Feather name="phone" size={16} color={theme.primary} style={{ marginLeft: 6 }} />
-            </Pressable>
-          ) : null}
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(300).duration(400)} style={[styles.infoCard, { backgroundColor: isDark ? theme.card : "#FFF" }]}>
