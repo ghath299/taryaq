@@ -72,19 +72,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="medicines"
         options={{
-          title: "العلاجات",
-          headerTitle: "العلاجات",
+          title: "العلاجات والصيدليات",
+          headerTitle: "العلاجات والصيدليات",
           headerTitleAlign: "right",
           tabBarIcon: ({ color }) => <Feather name="package" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="pharmacies"
-        options={{
-          title: "الصيدليات",
-          headerTitle: "الصيدليات",
-          headerTitleAlign: "right",
-          tabBarIcon: ({ color }) => <Feather name="cross" size={22} color={color} />,
         }}
       />
     </Tabs>
