@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { fbDb } from "./firebase-admin";
 import { logger } from "./logger";
 
@@ -19,21 +20,63 @@ export interface SecurityLogEntry {
   meta?: Record<string, unknown>;
 }
 
+export interface OtpRecord {
+  otpHash: string;
+  expiry: number;
+  attempts: number;
+  fullName: string;
+  sentAt: number;
+}
+
+export interface PaymentAttemptRecord {
+  count: number;
+  firstAt: number;
+}
+
 const memRate = new Map<string, RateRecord>();
 const memBlacklist = new Map<string, number>();
 const memSessions = new Map<string, string>();
+const memOtp = new Map<string, OtpRecord>();
+const memPay = new Map<string, PaymentAttemptRecord>();
+
+function hashKey(s: string): string {
+  return createHash("sha256").update(`taryaq:key:${s}`).digest("hex").slice(0, 32);
+}
 
 function ratePath(phoneHash: string): string {
   return `security/rateLimits/${phoneHash}`;
 }
-
 function blacklistPath(jti: string): string {
   return `security/blacklist/${jti}`;
 }
-
 function sessionPath(phoneHash: string): string {
   return `security/sessions/${phoneHash}`;
 }
+function otpPath(phone: string): string {
+  return `security/otpStore/${hashKey(phone)}`;
+}
+function payAttemptPath(bookingId: string): string {
+  return `security/paymentAttempts/${hashKey(bookingId)}`;
+}
+
+/* -------------------------- generic helpers -------------------------- */
+
+async function withRetry<T>(op: () => Promise<T>, attempts: number = 3, baseMs: number = 150): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await op();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, baseMs * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/* ----------------------------- Rate limits ----------------------------- */
 
 export async function getRate(phoneHash: string): Promise<RateRecord | null> {
   const db = fbDb();
@@ -47,14 +90,42 @@ export async function getRate(phoneHash: string): Promise<RateRecord | null> {
   }
 }
 
-export async function setRate(phoneHash: string, r: RateRecord): Promise<void> {
-  memRate.set(phoneHash, r);
+/**
+ * Atomic transaction-based mutator. Use for any read-modify-write on rate limits
+ * to avoid the lost-update race. The mutator MUST be pure and may run multiple
+ * times. Return undefined to abort the write.
+ */
+export async function mutateRate(
+  phoneHash: string,
+  mutator: (current: RateRecord | null) => RateRecord | null | undefined,
+): Promise<RateRecord | null> {
   const db = fbDb();
-  if (!db) return;
+  if (!db) {
+    const cur = memRate.get(phoneHash) ?? null;
+    const next = mutator(cur);
+    if (next === undefined) return cur;
+    if (next === null) memRate.delete(phoneHash);
+    else memRate.set(phoneHash, next);
+    return next ?? null;
+  }
   try {
-    await db.ref(ratePath(phoneHash)).set(r);
+    const result = await db.ref(ratePath(phoneHash)).transaction((current) => {
+      const out = mutator((current as RateRecord) ?? null);
+      if (out === undefined) return undefined;
+      return out;
+    });
+    const finalVal = (result.snapshot.val() as RateRecord | null) ?? null;
+    if (finalVal) memRate.set(phoneHash, finalVal);
+    else memRate.delete(phoneHash);
+    return finalVal;
   } catch (err) {
-    logger.error({ err }, "[security-store] setRate failed");
+    logger.error({ err }, "[security-store] mutateRate failed, fallback to memory");
+    const cur = memRate.get(phoneHash) ?? null;
+    const next = mutator(cur);
+    if (next === undefined) return cur;
+    if (next === null) memRate.delete(phoneHash);
+    else memRate.set(phoneHash, next);
+    return next ?? null;
   }
 }
 
@@ -69,6 +140,8 @@ export async function deleteRate(phoneHash: string): Promise<void> {
   }
 }
 
+/* ----------------------------- Blacklist ----------------------------- */
+
 export async function isBlacklisted(key: string): Promise<boolean> {
   const memExp = memBlacklist.get(key);
   if (memExp && memExp > Date.now()) return true;
@@ -81,7 +154,7 @@ export async function isBlacklisted(key: string): Promise<boolean> {
     if (!snap.exists()) return false;
     const exp = snap.val() as { expiresAt: number };
     if (exp.expiresAt < Date.now()) {
-      await db.ref(blacklistPath(key)).remove();
+      await db.ref(blacklistPath(key)).remove().catch(() => undefined);
       return false;
     }
     memBlacklist.set(key, exp.expiresAt);
@@ -97,11 +170,13 @@ export async function addBlacklist(key: string, expiresAt: number): Promise<void
   const db = fbDb();
   if (!db) return;
   try {
-    await db.ref(blacklistPath(key)).set({ expiresAt });
+    await withRetry(() => db.ref(blacklistPath(key)).set({ expiresAt }), 3, 150);
   } catch (err) {
-    logger.error({ err }, "[security-store] addBlacklist failed");
+    logger.error({ err, key }, "[security-store] addBlacklist failed after 3 retries — kept only in memory");
   }
 }
+
+/* ----------------------------- Sessions ----------------------------- */
 
 export async function getActiveSession(phoneHash: string): Promise<string | null> {
   const mem = memSessions.get(phoneHash);
@@ -125,9 +200,13 @@ export async function setActiveSession(phoneHash: string, sessionId: string): Pr
   const db = fbDb();
   if (!db) return;
   try {
-    await db.ref(sessionPath(phoneHash)).set({ sessionId, updatedAt: Date.now() });
+    await withRetry(
+      () => db.ref(sessionPath(phoneHash)).set({ sessionId, updatedAt: Date.now() }),
+      3,
+      150,
+    );
   } catch (err) {
-    logger.error({ err }, "[security-store] setActiveSession failed");
+    logger.error({ err }, "[security-store] setActiveSession failed after retries");
   }
 }
 
@@ -141,6 +220,93 @@ export async function deleteActiveSession(phoneHash: string): Promise<void> {
     logger.error({ err }, "[security-store] deleteActiveSession failed");
   }
 }
+
+/* ------------------------------- OTP ------------------------------- */
+
+export async function setOtp(phone: string, record: OtpRecord): Promise<void> {
+  memOtp.set(phone, record);
+  const db = fbDb();
+  if (!db) return;
+  try {
+    await db.ref(otpPath(phone)).set(record);
+  } catch (err) {
+    logger.error({ err }, "[security-store] setOtp failed");
+  }
+}
+
+export async function getOtp(phone: string): Promise<OtpRecord | null> {
+  const mem = memOtp.get(phone);
+  if (mem) {
+    if (Date.now() > mem.expiry) {
+      memOtp.delete(phone);
+    } else {
+      return mem;
+    }
+  }
+  const db = fbDb();
+  if (!db) return null;
+  try {
+    const snap = await db.ref(otpPath(phone)).get();
+    if (!snap.exists()) return null;
+    const r = snap.val() as OtpRecord;
+    if (Date.now() > r.expiry) {
+      await db.ref(otpPath(phone)).remove().catch(() => undefined);
+      return null;
+    }
+    memOtp.set(phone, r);
+    return r;
+  } catch (err) {
+    logger.error({ err }, "[security-store] getOtp failed");
+    return null;
+  }
+}
+
+export async function deleteOtp(phone: string): Promise<void> {
+  memOtp.delete(phone);
+  const db = fbDb();
+  if (!db) return;
+  try {
+    await db.ref(otpPath(phone)).remove();
+  } catch (err) {
+    logger.error({ err }, "[security-store] deleteOtp failed");
+  }
+}
+
+export async function updateOtpAttempts(phone: string, attempts: number): Promise<void> {
+  const r = memOtp.get(phone);
+  if (r) memOtp.set(phone, { ...r, attempts });
+  const db = fbDb();
+  if (!db) return;
+  try {
+    await db.ref(`${otpPath(phone)}/attempts`).set(attempts);
+  } catch (err) {
+    logger.error({ err }, "[security-store] updateOtpAttempts failed");
+  }
+}
+
+/** Sweep expired OTPs from memory + Firebase. Called periodically. */
+export async function sweepExpiredOtps(): Promise<void> {
+  const now = Date.now();
+  for (const [k, v] of memOtp.entries()) if (now > v.expiry) memOtp.delete(k);
+  const db = fbDb();
+  if (!db) return;
+  try {
+    const snap = await db.ref("security/otpStore").get();
+    if (!snap.exists()) return;
+    const all = snap.val() as Record<string, OtpRecord>;
+    const updates: Record<string, null> = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (now > v.expiry) updates[`security/otpStore/${k}`] = null;
+    }
+    if (Object.keys(updates).length > 0) {
+      await db.ref().update(updates);
+    }
+  } catch (err) {
+    logger.error({ err }, "[security-store] sweepExpiredOtps failed");
+  }
+}
+
+/* -------------------------- Security logs -------------------------- */
 
 export async function appendSecurityLog(entry: SecurityLogEntry): Promise<void> {
   const db = fbDb();
@@ -163,5 +329,85 @@ export async function listRecentLogs(limit: number = 200): Promise<SecurityLogEn
   } catch (err) {
     logger.error({ err }, "[security-store] listRecentLogs failed");
     return [];
+  }
+}
+
+/* ---------------------- Payment attempt limit ---------------------- */
+
+export interface PaymentAttemptResult {
+  allowed: boolean;
+  remaining: number;
+  retryAfterMs?: number;
+}
+
+export async function consumePaymentAttempt(
+  bookingId: string,
+  windowMs: number,
+  maxAttempts: number,
+): Promise<PaymentAttemptResult> {
+  const db = fbDb();
+  const now = Date.now();
+
+  const apply = (cur: PaymentAttemptRecord | null): {
+    next: PaymentAttemptRecord | null | undefined;
+    result: PaymentAttemptResult;
+  } => {
+    if (!cur || now - cur.firstAt > windowMs) {
+      return {
+        next: { count: 1, firstAt: now },
+        result: { allowed: true, remaining: maxAttempts - 1 },
+      };
+    }
+    if (cur.count >= maxAttempts) {
+      return {
+        next: undefined,
+        result: { allowed: false, remaining: 0, retryAfterMs: windowMs - (now - cur.firstAt) },
+      };
+    }
+    return {
+      next: { count: cur.count + 1, firstAt: cur.firstAt },
+      result: { allowed: true, remaining: maxAttempts - (cur.count + 1) },
+    };
+  };
+
+  if (!db) {
+    const cur = memPay.get(bookingId) ?? null;
+    const { next, result } = apply(cur);
+    if (next !== undefined) {
+      if (next === null) memPay.delete(bookingId);
+      else memPay.set(bookingId, next);
+    }
+    return result;
+  }
+
+  try {
+    let captured: PaymentAttemptResult = { allowed: false, remaining: 0 };
+    await db.ref(payAttemptPath(bookingId)).transaction((current) => {
+      const cur = (current as PaymentAttemptRecord | null) ?? null;
+      const { next, result } = apply(cur);
+      captured = result;
+      return next === undefined ? undefined : next;
+    });
+    return captured;
+  } catch (err) {
+    logger.error({ err }, "[security-store] consumePaymentAttempt failed, fallback to memory");
+    const cur = memPay.get(bookingId) ?? null;
+    const { next, result } = apply(cur);
+    if (next !== undefined) {
+      if (next === null) memPay.delete(bookingId);
+      else memPay.set(bookingId, next);
+    }
+    return result;
+  }
+}
+
+export async function resetPaymentAttempts(bookingId: string): Promise<void> {
+  memPay.delete(bookingId);
+  const db = fbDb();
+  if (!db) return;
+  try {
+    await db.ref(payAttemptPath(bookingId)).remove();
+  } catch (err) {
+    logger.error({ err }, "[security-store] resetPaymentAttempts failed");
   }
 }

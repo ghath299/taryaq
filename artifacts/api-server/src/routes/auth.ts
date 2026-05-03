@@ -4,25 +4,19 @@ import { logger } from "../lib/logger";
 import { issueTokens, refreshAccessToken, logoutSession, verifyToken } from "../lib/jwt";
 import { requireAuth, type AuthedRequest } from "../middlewares/requireAuth";
 import {
-  getRate,
-  setRate,
+  mutateRate,
   appendSecurityLog,
   listRecentLogs,
+  setOtp,
+  getOtp,
+  deleteOtp,
+  updateOtpAttempts,
+  sweepExpiredOtps,
   type RateRecord,
   type SecurityLogEntry,
 } from "../lib/security-store";
 
 const router = Router();
-
-interface OTPRecord {
-  otpHash: string;
-  expiry: number;
-  attempts: number;
-  fullName: string;
-  sentAt: number;
-}
-
-const otpStore = new Map<string, OTPRecord>();
 
 const CONFIG = {
   OTP_EXPIRY_MS: 5 * 60 * 1000,
@@ -46,15 +40,12 @@ const CONFIG = {
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
-
 function hashPhone(phone: string): string {
   return sha256(`taryaq:phone:${phone}`).slice(0, 32);
 }
-
 function generateSecureOTP(): string {
   return randomInt(100000, 1000000).toString();
 }
-
 function sanitizeName(input: string): string {
   return input
     .replace(/[<>"'`;{}()$\\]/g, "")
@@ -62,11 +53,9 @@ function sanitizeName(input: string): string {
     .trim()
     .slice(0, CONFIG.NAME_MAX_LENGTH);
 }
-
 function sanitizePhone(input: string): string {
   return input.replace(/\D/g, "").slice(0, CONFIG.PHONE_MAX_LENGTH);
 }
-
 function todayDay(): number {
   return Math.floor(Date.now() / (24 * 60 * 60 * 1000));
 }
@@ -77,34 +66,14 @@ async function logSecurity(entry: Omit<SecurityLogEntry, "timestamp">): Promise<
   await appendSecurityLog(full);
 }
 
-async function getOrCreateRate(phoneHash: string): Promise<RateRecord> {
-  let r = await getRate(phoneHash);
-  const today = todayDay();
-  if (!r) {
-    r = { sendCount: 0, firstSendAt: 0, verifyAttempts: 0, dailyBlocks: 0, dailyBlocksDay: today };
-  }
-  if (r.dailyBlocksDay !== today) {
-    r.dailyBlocks = 0;
-    r.dailyBlocksDay = today;
-  }
-  return r;
-}
-
-function isCurrentlyBlocked(r: RateRecord): boolean {
-  return !!r.blockedUntil && Date.now() < r.blockedUntil;
-}
-
-async function applyBlock(phoneHash: string, r: RateRecord): Promise<void> {
-  r.dailyBlocks++;
-  const duration =
-    r.dailyBlocks >= CONFIG.DAILY_BLOCK_LIMIT
-      ? CONFIG.LONG_BLOCK_DURATION_MS
-      : CONFIG.BLOCK_DURATION_MS;
-  r.blockedUntil = Date.now() + duration;
-  r.verifyAttempts = 0;
-  r.sendCount = 0;
-  await setRate(phoneHash, r);
-  await logSecurity({ phoneHash, action: "blocked", meta: { duration, dailyBlocks: r.dailyBlocks } });
+function freshRate(): RateRecord {
+  return {
+    sendCount: 0,
+    firstSendAt: 0,
+    verifyAttempts: 0,
+    dailyBlocks: 0,
+    dailyBlocksDay: todayDay(),
+  };
 }
 
 function progressiveDelayMs(attempt: number): number {
@@ -113,16 +82,13 @@ function progressiveDelayMs(attempt: number): number {
   if (attempt === 4) return 5000;
   return 10000;
 }
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/* Periodic sweeps */
 setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of otpStore.entries()) {
-    if (now > v.expiry) otpStore.delete(k);
-  }
+  void sweepExpiredOtps();
 }, 60 * 1000).unref();
 
 async function sendViaTelegram(chatId: string, text: string): Promise<boolean> {
@@ -141,6 +107,103 @@ async function sendViaTelegram(chatId: string, text: string): Promise<boolean> {
     return false;
   }
 }
+
+/* ----- Atomic rate-limit consumers (transaction-based) ----- */
+
+interface SendDecision {
+  ok: boolean;
+  blocked: boolean;
+  newlyBlocked: boolean;
+}
+
+async function tryConsumeSend(phoneHash: string): Promise<SendDecision> {
+  const decision: SendDecision = { ok: false, blocked: false, newlyBlocked: false };
+  await mutateRate(phoneHash, (cur) => {
+    const today = todayDay();
+    const r: RateRecord = cur ? { ...cur } : freshRate();
+    if (r.dailyBlocksDay !== today) {
+      r.dailyBlocks = 0;
+      r.dailyBlocksDay = today;
+    }
+    if (r.blockedUntil && Date.now() < r.blockedUntil) {
+      decision.blocked = true;
+      return r;
+    } else if (r.blockedUntil) {
+      delete r.blockedUntil;
+    }
+    if (!r.firstSendAt || Date.now() - r.firstSendAt > CONFIG.RATE_SEND_WINDOW_MS) {
+      r.firstSendAt = Date.now();
+      r.sendCount = 0;
+    }
+    if (r.sendCount >= CONFIG.RATE_SEND_MAX) {
+      r.dailyBlocks++;
+      const dur =
+        r.dailyBlocks >= CONFIG.DAILY_BLOCK_LIMIT
+          ? CONFIG.LONG_BLOCK_DURATION_MS
+          : CONFIG.BLOCK_DURATION_MS;
+      r.blockedUntil = Date.now() + dur;
+      r.verifyAttempts = 0;
+      r.sendCount = 0;
+      decision.blocked = true;
+      decision.newlyBlocked = true;
+      return r;
+    }
+    r.sendCount++;
+    decision.ok = true;
+    return r;
+  });
+  return decision;
+}
+
+interface VerifyDecision {
+  blocked: boolean;
+  newlyBlocked: boolean;
+  verifyAttempts: number;
+}
+
+async function tryConsumeVerify(phoneHash: string): Promise<VerifyDecision> {
+  const decision: VerifyDecision = { blocked: false, newlyBlocked: false, verifyAttempts: 0 };
+  await mutateRate(phoneHash, (cur) => {
+    const today = todayDay();
+    const r: RateRecord = cur ? { ...cur } : freshRate();
+    if (r.dailyBlocksDay !== today) {
+      r.dailyBlocks = 0;
+      r.dailyBlocksDay = today;
+    }
+    if (r.blockedUntil && Date.now() < r.blockedUntil) {
+      decision.blocked = true;
+      decision.verifyAttempts = r.verifyAttempts;
+      return r;
+    } else if (r.blockedUntil) {
+      delete r.blockedUntil;
+    }
+    r.verifyAttempts++;
+    if (r.verifyAttempts >= CONFIG.OTP_MAX_VERIFY_ATTEMPTS) {
+      r.dailyBlocks++;
+      const dur =
+        r.dailyBlocks >= CONFIG.DAILY_BLOCK_LIMIT
+          ? CONFIG.LONG_BLOCK_DURATION_MS
+          : CONFIG.BLOCK_DURATION_MS;
+      r.blockedUntil = Date.now() + dur;
+      r.verifyAttempts = 0;
+      r.sendCount = 0;
+      decision.blocked = true;
+      decision.newlyBlocked = true;
+    }
+    decision.verifyAttempts = r.verifyAttempts;
+    return r;
+  });
+  return decision;
+}
+
+async function resetRateOnSuccess(phoneHash: string): Promise<void> {
+  await mutateRate(phoneHash, (cur) => {
+    if (!cur) return undefined;
+    return { ...cur, sendCount: 0, verifyAttempts: 0 };
+  });
+}
+
+/* ---------------------------- Routes ---------------------------- */
 
 router.post("/send-otp", async (req: Request, res: Response) => {
   const body = req.body as {
@@ -180,18 +243,10 @@ router.post("/send-otp", async (req: Request, res: Response) => {
   }
 
   const phoneHash = hashPhone(phoneRaw);
-  const rate = await getOrCreateRate(phoneHash);
-
-  if (isCurrentlyBlocked(rate)) {
-    await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "send" } });
-    res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
-    return;
-  }
-
   await logSecurity({ phoneHash, action: "otp_request", ip });
 
   if (phoneRaw === CONFIG.MASTER_PHONE) {
-    otpStore.set(phoneRaw, {
+    await setOtp(phoneRaw, {
       otpHash: sha256(CONFIG.MASTER_OTP),
       expiry: Date.now() + CONFIG.OTP_EXPIRY_MS,
       attempts: 0,
@@ -203,21 +258,16 @@ router.post("/send-otp", async (req: Request, res: Response) => {
     return;
   }
 
-  if (!rate.firstSendAt || Date.now() - rate.firstSendAt > CONFIG.RATE_SEND_WINDOW_MS) {
-    rate.firstSendAt = Date.now();
-    rate.sendCount = 0;
-  }
-  if (rate.sendCount >= CONFIG.RATE_SEND_MAX) {
-    await applyBlock(phoneHash, rate);
+  const dec = await tryConsumeSend(phoneHash);
+  if (dec.blocked) {
+    if (dec.newlyBlocked) await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "send" } });
     res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
     return;
   }
-  rate.sendCount++;
-  await setRate(phoneHash, rate);
 
   const otp = generateSecureOTP();
   const sentAt = Date.now();
-  otpStore.set(phoneRaw, {
+  await setOtp(phoneRaw, {
     otpHash: sha256(otp),
     expiry: sentAt + CONFIG.OTP_EXPIRY_MS,
     attempts: 0,
@@ -227,10 +277,7 @@ router.post("/send-otp", async (req: Request, res: Response) => {
 
   const message = `🔐 <b>ترياق — رمز التحقق</b>\n\nرمز التحقق الخاص بك:\n\n<code>${otp}</code>\n\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`;
   const sent = await sendViaTelegram(phoneRaw, message);
-
-  if (!sent) {
-    logger.warn({ phoneHash, otp }, "=== DEV OTP (Telegram not configured) ===");
-  }
+  if (!sent) logger.warn({ phoneHash, otp }, "=== DEV OTP (Telegram not configured) ===");
   await logSecurity({ phoneHash, action: "otp_sent", ip, meta: { telegramOk: sent } });
 
   res.json({ success: true, message: "تم إرسال رمز التحقق", sentAt });
@@ -262,48 +309,40 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
-
   if (inputDurationMs < CONFIG.MIN_OTP_INPUT_TIME_MS) {
     await logSecurity({ phoneHash, action: "bot_timing", ip, meta: { inputDurationMs } });
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
 
-  const rate = await getOrCreateRate(phoneHash);
-  if (isCurrentlyBlocked(rate)) {
+  const dec = await tryConsumeVerify(phoneHash);
+  await sleep(progressiveDelayMs(dec.verifyAttempts));
+  if (dec.blocked) {
+    if (dec.newlyBlocked) {
+      await deleteOtp(phoneRaw);
+      await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "verify" } });
+    }
     res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
-  const record = otpStore.get(phoneRaw);
-  if (!record || Date.now() > record.expiry) {
-    if (record) otpStore.delete(phoneRaw);
-    rate.verifyAttempts++;
-    await setRate(phoneHash, rate);
-    await sleep(progressiveDelayMs(rate.verifyAttempts));
+  const record = await getOtp(phoneRaw);
+  if (!record) {
     await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { reason: "expired_or_missing" } });
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
 
-  record.attempts++;
-  rate.verifyAttempts++;
-  await setRate(phoneHash, rate);
-  await sleep(progressiveDelayMs(rate.verifyAttempts));
-
-  if (
-    record.attempts > CONFIG.OTP_MAX_VERIFY_ATTEMPTS ||
-    rate.verifyAttempts >= CONFIG.OTP_MAX_VERIFY_ATTEMPTS
-  ) {
-    otpStore.delete(phoneRaw);
-    await applyBlock(phoneHash, rate);
+  const newAttempts = record.attempts + 1;
+  await updateOtpAttempts(phoneRaw, newAttempts);
+  if (newAttempts > CONFIG.OTP_MAX_VERIFY_ATTEMPTS) {
+    await deleteOtp(phoneRaw);
     res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
-  const submittedHash = sha256(otpRaw);
-  if (submittedHash !== record.otpHash) {
-    const remaining = CONFIG.OTP_MAX_VERIFY_ATTEMPTS - rate.verifyAttempts;
+  if (sha256(otpRaw) !== record.otpHash) {
+    const remaining = CONFIG.OTP_MAX_VERIFY_ATTEMPTS - dec.verifyAttempts;
     await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { remaining } });
     res.status(400).json({
       success: false,
@@ -313,10 +352,8 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     return;
   }
 
-  otpStore.delete(phoneRaw);
-  rate.verifyAttempts = 0;
-  rate.sendCount = 0;
-  await setRate(phoneHash, rate);
+  await deleteOtp(phoneRaw);
+  await resetRateOnSuccess(phoneHash);
   await logSecurity({ phoneHash, action: "verify_success", ip });
 
   const tokens = await issueTokens(phoneRaw);

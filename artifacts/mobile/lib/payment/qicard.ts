@@ -60,33 +60,41 @@ export interface PaymentResult {
 }
 
 /* ----------------------------- Rate limiting ----------------------------- */
-// عدّاد محلي بسيط لمحاولات الدفع لكل حجز.
-// في الإنتاج يُستحسن نقل هذا الفحص إلى الخادم لأنه يمكن تجاوزه على الجهاز.
-const attempts = new Map<string, { count: number; firstAt: number }>();
-const ATTEMPT_WINDOW_MS = 10 * 60 * 1000; // 10 دقائق
+// عدّاد محاولات الدفع يُفرض على الخادم عبر /api/payments/qicard/attempt
+// حتى لا يمكن تجاوزه بإعادة تشغيل التطبيق.
+import { authFetch } from "@/lib/auth-tokens";
+import { getApiUrl } from "@/lib/query-client";
 
-function recordAttempt(bookingId: string): {
+interface ServerAttemptResult {
   allowed: boolean;
   remaining: number;
-} {
-  const now = Date.now();
-  const entry = attempts.get(bookingId);
-  if (!entry || now - entry.firstAt > ATTEMPT_WINDOW_MS) {
-    attempts.set(bookingId, { count: 1, firstAt: now });
-    return { allowed: true, remaining: QI_CARD_CONFIG.maxAttempts - 1 };
-  }
-  if (entry.count >= QI_CARD_CONFIG.maxAttempts) {
-    return { allowed: false, remaining: 0 };
-  }
-  entry.count += 1;
-  return {
-    allowed: true,
-    remaining: QI_CARD_CONFIG.maxAttempts - entry.count,
-  };
+  retryAfterMs?: number;
+  message?: string;
 }
 
-export function resetPaymentAttempts(bookingId: string) {
-  attempts.delete(bookingId);
+async function consumeServerAttempt(bookingId: string): Promise<ServerAttemptResult> {
+  try {
+    const res = await authFetch(`${getApiUrl()}/api/payments/qicard/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ bookingId }),
+    });
+    const data = (await res.json()) as ServerAttemptResult;
+    return data;
+  } catch {
+    // فشل الشبكة → نسمح بالمحاولة (السيرفر سيرفض إن تجاوزت)
+    return { allowed: true, remaining: QI_CARD_CONFIG.maxAttempts - 1 };
+  }
+}
+
+export async function resetPaymentAttempts(bookingId: string): Promise<void> {
+  try {
+    await authFetch(`${getApiUrl()}/api/payments/qicard/reset`, {
+      method: "POST",
+      body: JSON.stringify({ bookingId }),
+    });
+  } catch {
+    // تجاهل — الجلسة التالية ستعيد ضبط النافذة عند انقضاء 10 دقائق
+  }
 }
 
 /* --------------------------- processPayment ------------------------------ */
@@ -102,13 +110,14 @@ export async function processPayment(
 ): Promise<PaymentResult> {
   const cleanCard = params.cardNumber.replace(/\s/g, "");
 
-  // فحص الحد الأقصى للمحاولات
-  const limit = recordAttempt(params.bookingId);
+  // فحص الحد الأقصى للمحاولات (مفروض على الخادم)
+  const limit = await consumeServerAttempt(params.bookingId);
   if (!limit.allowed) {
     return {
       success: false,
       errorCode: "RATE_LIMITED",
       message:
+        limit.message ||
         "تجاوزت الحد الأقصى لمحاولات الدفع. يرجى المحاولة بعد 10 دقائق.",
     };
   }
