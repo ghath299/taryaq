@@ -64,7 +64,19 @@ export default function ProfileScreen() {
   const textPrimary = isDark ? "#F0F6FC" : "#0F172A";
   const textSecondary = isDark ? "#8B95A5" : "#6B7280";
 
+  const performLogout = async () => {
+    await logout();
+    router.replace("/(auth)/login");
+  };
+
   const handleLogout = () => {
+    if (Platform.OS === "web") {
+      const ok =
+        typeof window !== "undefined" &&
+        window.confirm("هل أنت متأكد من تسجيل الخروج من حسابك؟");
+      if (ok) void performLogout();
+      return;
+    }
     Alert.alert(
       "تسجيل الخروج",
       "هل أنت متأكد من تسجيل الخروج من حسابك؟",
@@ -73,10 +85,7 @@ export default function ProfileScreen() {
         {
           text: "تسجيل الخروج",
           style: "destructive",
-          onPress: async () => {
-            await logout();
-            router.replace("/(auth)/login");
-          },
+          onPress: () => void performLogout(),
         },
       ],
     );
