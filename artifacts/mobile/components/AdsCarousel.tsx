@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Dimensions,
@@ -12,6 +11,7 @@ import {
   NativeScrollEvent,
   AccessibilityInfo,
 } from "react-native";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -138,7 +138,7 @@ export function AdsCarousel({ slides, horizontalPadding = Spacing.xl }: Props) {
         </View>
 
         <View style={styles.imageCol}>
-          <Image source={item.image} style={styles.image} resizeMode="contain" />
+          <Image source={item.image} style={styles.image} contentFit="contain" priority="high" cachePolicy="memory-disk" />
         </View>
         <View style={styles.textCol}>
           <ThemedText

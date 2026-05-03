@@ -4,10 +4,10 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  Image,
   TextInput,
   Platform,
 } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -154,6 +154,8 @@ export default function HomeScreen() {
                   : require("@/assets/images/user-avatar.png")
               }
               style={styles.avatarImg}
+              contentFit="cover"
+              cachePolicy="memory-disk"
             />
           </Pressable>
 
@@ -335,6 +337,9 @@ export default function HomeScreen() {
                       doctorImages[doc.id] ??
                       require("@/assets/images/doctor-ahmed.png")
                     }
+                    contentFit="cover"
+                    priority="high"
+                    cachePolicy="memory-disk"
                     style={styles.doctorPhoto}
                   />
                   <ThemedText
@@ -529,7 +534,8 @@ export default function HomeScreen() {
               <Image
                 source={require("@/assets/images/health-shield.png")}
                 style={styles.healthShield}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
             </View>
           </View>
@@ -577,7 +583,8 @@ export default function HomeScreen() {
               <Image
                 source={require("@/assets/images/water-glass.png")}
                 style={styles.tipImage}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
             </View>
           </View>
@@ -901,7 +908,6 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 12,
     marginBottom: 8,
-    resizeMode: "cover",
   },
   doctorName: {
     fontWeight: "700",

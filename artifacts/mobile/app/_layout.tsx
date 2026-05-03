@@ -14,10 +14,12 @@ if (typeof window !== "undefined") {
 }
 
 import { useFonts } from "expo-font";
+import { Asset } from "expo-asset";
+import * as SplashScreen from "expo-splash-screen";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
-import React, { useEffect } from "react";
-import { Platform } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -27,6 +29,8 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
 import { useNotificationSetup } from "@/hooks/useNotifications";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
 
@@ -119,7 +123,22 @@ function RootLayoutNav() {
   );
 }
 
+const IMAGES_TO_PRELOAD = [
+  require("../assets/images/doctor-consultation-light.jpeg"),
+  require("../assets/images/doctor-consultation-dark.jpeg"),
+  require("../assets/images/doctor-ahmed.png"),
+  require("../assets/images/doctor-sara.png"),
+  require("../assets/images/doctor-ali.png"),
+  require("../assets/images/banner-phone.png"),
+  require("../assets/images/water-glass.png"),
+  require("../assets/images/health-shield.png"),
+  require("../assets/images/user-avatar.png"),
+  require("../assets/images/doctor-consultation.png"),
+];
+
 export default function RootLayout() {
+  const [appReady, setAppReady] = useState(false);
+
   const [fontsLoaded] = useFonts(
     Platform.OS === "web"
       ? {}
@@ -132,7 +151,19 @@ export default function RootLayout() {
         },
   );
 
-  if (!fontsLoaded && Platform.OS !== "web") return null;
+  useEffect(() => {
+    if (!fontsLoaded && Platform.OS !== "web") return;
+    Asset.loadAsync(IMAGES_TO_PRELOAD)
+      .catch(() => {})
+      .finally(async () => {
+        setAppReady(true);
+        await SplashScreen.hideAsync().catch(() => {});
+      });
+  }, [fontsLoaded]);
+
+  const onLayoutRoot = useCallback(() => {}, []);
+
+  if (!appReady) return <View style={{ flex: 1 }} onLayout={onLayoutRoot} />;
 
   return (
     <SafeAreaProvider>

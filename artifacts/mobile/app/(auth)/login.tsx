@@ -7,9 +7,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Image,
   Pressable,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useRouter } from "expo-router";
@@ -104,7 +104,9 @@ export default function LoginScreen() {
           <Image
             source={isDark ? darkIllustration : lightIllustration}
             style={styles.illustration}
-            resizeMode="contain"
+            contentFit="contain"
+            priority="high"
+            cachePolicy="memory-disk"
           />
         </Animated.View>
 
@@ -270,14 +272,13 @@ const styles = StyleSheet.create({
   },
   illustrationWrapper: {
     width: "100%",
-    aspectRatio: 1,
-    maxHeight: 320,
+    height: 260,
     alignSelf: "center",
     marginVertical: Spacing.md,
   },
   illustration: {
     width: "100%",
-    height: "100%",
+    height: 260,
   },
   welcomeBlock: {
     alignItems: "center",
