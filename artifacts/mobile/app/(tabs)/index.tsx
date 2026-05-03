@@ -582,32 +582,32 @@ export default function HomeScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* FLOATING CONSULT BUTTON */}
+      {/* EMERGENCY BUTTON */}
       <Pressable
         onPress={() => setEmergencyVisible(true)}
         style={[
           styles.fab,
           {
-            backgroundColor: cardBg,
+            backgroundColor: "#DC2626",
             bottom: tabBarHeight + 16,
-            borderColor: subtleBorder,
+            borderColor: "#B91C1C",
           },
         ]}
         accessibilityRole="button"
-        accessibilityLabel="طلب استشارة طبية فورية"
+        accessibilityLabel="طلب سيارة إسعاف"
         hitSlop={8}
       >
-        <Feather name="message-circle" size={16} color={BRAND_BLUE_DEEP} />
+        <MaterialCommunityIcons name="ambulance" size={18} color="#FFFFFF" />
         <ThemedText
           type="caption"
           style={{
-            color: textPrimary,
+            color: "#FFFFFF",
             fontWeight: "700",
             marginRight: 6,
             fontSize: 12,
           }}
         >
-          استشارة
+          الطوارئ
         </ThemedText>
       </Pressable>
 
