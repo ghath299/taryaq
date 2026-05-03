@@ -1,16 +1,44 @@
 if (typeof window !== "undefined") {
-  const originalError = window.onerror;
-  window.onerror = (msg, ...rest) => {
-    if (String(msg).includes("timeout exceeded")) return true;
-    return (originalError as ((m: unknown, ...r: unknown[]) => boolean) | null)?.(msg, ...rest) ?? false;
-  };
+  const SUPPRESS = (s: string) =>
+    s.includes("timeout exceeded") ||
+    s.includes("fontfaceobserver") ||
+    s.includes("FontFaceObserver");
+
   window.addEventListener(
-    "unhandledrejection",
+    "error",
     (e) => {
-      if (String((e as PromiseRejectionEvent).reason).includes("timeout exceeded")) e.preventDefault();
+      const msg = String((e as ErrorEvent).message ?? "") + " " + String((e as ErrorEvent).filename ?? "");
+      if (SUPPRESS(msg)) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
     },
     true,
   );
+  window.addEventListener(
+    "unhandledrejection",
+    (e) => {
+      const reason = (e as PromiseRejectionEvent).reason;
+      const msg = String(reason && (reason.message ?? reason));
+      if (SUPPRESS(msg)) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    },
+    true,
+  );
+  const origConsoleError = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    const joined = args.map((a) => (a instanceof Error ? a.message : String(a))).join(" ");
+    if (SUPPRESS(joined)) return;
+    origConsoleError(...args);
+  };
+  const origConsoleWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    const joined = args.map((a) => (a instanceof Error ? a.message : String(a))).join(" ");
+    if (SUPPRESS(joined)) return;
+    origConsoleWarn(...args);
+  };
 }
 
 import { useFonts } from "expo-font";
