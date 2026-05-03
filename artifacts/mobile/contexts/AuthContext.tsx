@@ -8,6 +8,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
 import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
+import { saveTokens, clearTokens, getStoredTokens, getValidAccessToken } from "@/lib/auth-tokens";
 
 export type UserRole = "patient" | "doctor" | "pharmacist" | null;
 
@@ -69,9 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as AuthUser;
-        setUser(parsed);
-        if (parsed.role && parsed.isVerified && parsed.locationGranted) {
-          setAuthStep("complete");
+        const tokens = await getStoredTokens();
+        const tokensValid = !!tokens && tokens.refreshExpiresAt > Date.now();
+        if (parsed.isVerified && !tokensValid) {
+          await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          await clearTokens();
+        } else {
+          setUser(parsed);
+          if (parsed.role && parsed.isVerified && parsed.locationGranted) {
+            setAuthStep("complete");
+          }
         }
       }
     } catch (error) {
@@ -196,7 +204,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phoneNumber, otp: cleanCode, inputDurationMs, honeypot: pendingHoneypot }),
       });
-      const data = await res.json() as { success?: boolean; message?: string; attemptsRemaining?: number };
+      const data = await res.json() as {
+        success?: boolean;
+        message?: string;
+        attemptsRemaining?: number;
+        accessToken?: string;
+        refreshToken?: string;
+        accessExpiresAt?: number;
+        refreshExpiresAt?: number;
+      };
       if (!res.ok || !data.success) {
         return {
           success: false,
@@ -205,6 +221,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           blocked: res.status === 429,
           expired: data.message?.includes("انتهت الصلاحية"),
         };
+      }
+      if (data.accessToken && data.refreshToken && data.accessExpiresAt && data.refreshExpiresAt) {
+        await saveTokens({
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          accessExpiresAt: data.accessExpiresAt,
+          refreshExpiresAt: data.refreshExpiresAt,
+        });
       }
       const role = await fetchUserRole(phoneNumber);
       try {
@@ -247,6 +271,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    try {
+      const token = await getValidAccessToken();
+      if (token) {
+        await fetch(`${getApiUrl()}/api/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+      }
+    } catch {
+      /* ignore network errors during logout */
+    }
     setUser(null);
     setAuthStep("login");
     setPendingPhone("");
@@ -255,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingLocation(undefined);
     setOtpSentAt(0);
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    await clearTokens();
   };
 
   const isAuthenticated =

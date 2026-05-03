@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomInt } from "node:crypto";
 import { logger } from "../lib/logger";
+import { issueTokens, refreshAccessToken, logoutSession, verifyToken } from "../lib/jwt";
+import { requireAuth, type AuthedRequest } from "../middlewares/requireAuth";
 
 const router = Router();
 
@@ -343,7 +345,49 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   rate.verifyAttempts = 0;
   rate.sendCount = 0;
   logSecurity({ phoneHash, action: "verify_success", ip });
+
+  const tokens = issueTokens(phoneRaw);
+  res.json({
+    success: true,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt,
+  });
+});
+
+router.post("/refresh", (req: Request, res: Response) => {
+  const { refreshToken } = req.body as { refreshToken?: string };
+  if (!refreshToken) {
+    res.status(400).json({ message: "refresh token مطلوب" });
+    return;
+  }
+  const tokens = refreshAccessToken(refreshToken);
+  if (!tokens) {
+    res.status(401).json({ message: "الجلسة منتهية — سجّل الدخول من جديد" });
+    return;
+  }
+  res.json({
+    success: true,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt,
+  });
+});
+
+router.post("/logout", (req: Request, res: Response) => {
+  const header = req.header("authorization") ?? req.header("Authorization");
+  if (header && header.startsWith("Bearer ")) {
+    const payload = verifyToken(header.slice(7).trim(), "access");
+    if (payload) logoutSession(payload.phoneHash, payload.sessionId);
+  }
   res.json({ success: true });
+});
+
+router.get("/me", requireAuth, (req: Request, res: Response) => {
+  const auth = (req as AuthedRequest).auth;
+  res.json({ phoneHash: auth?.phoneHash, sessionId: auth?.sessionId });
 });
 
 router.get("/security/logs", (req: Request, res: Response) => {

@@ -18,7 +18,10 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
-        "LSApplicationQueriesSchemes": ["baly", "waze"]
+        "LSApplicationQueriesSchemes": [
+          "baly",
+          "waze"
+        ]
       }
     },
     "android": {
@@ -29,10 +32,36 @@
         "VIBRATE"
       ],
       "queries": [
-        { "package": "app.baly.passenger" },
-        { "package": "com.waze" },
-        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "baly" }] }] },
-        { "intent": [{ "action": "android.intent.action.VIEW", "data": [{ "scheme": "waze" }] }] }
+        {
+          "package": "app.baly.passenger"
+        },
+        {
+          "package": "com.waze"
+        },
+        {
+          "intent": [
+            {
+              "action": "android.intent.action.VIEW",
+              "data": [
+                {
+                  "scheme": "baly"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "intent": [
+            {
+              "action": "android.intent.action.VIEW",
+              "data": [
+                {
+                  "scheme": "waze"
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     "web": {
@@ -60,7 +89,8 @@
           "color": "#5EDFFF",
           "sounds": []
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
