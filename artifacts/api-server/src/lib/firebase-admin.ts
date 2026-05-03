@@ -1,9 +1,11 @@
 import { initializeApp, cert, getApps, type App } from "firebase-admin/app";
 import { getDatabase, type Database } from "firebase-admin/database";
+import { getAuth, type Auth } from "firebase-admin/auth";
 import { logger } from "./logger";
 
 let app: App | null = null;
 let db: Database | null = null;
+let auth: Auth | null = null;
 let initFailed = false;
 
 const DEFAULT_DB_URL = "https://ghath-c86ae-default-rtdb.firebaseio.com";
@@ -36,6 +38,7 @@ function init(): void {
         databaseURL: databaseURL || DEFAULT_DB_URL,
       });
     db = getDatabase(app);
+    auth = getAuth(app);
     logger.info({ projectId: parsed.project_id }, "[firebase-admin] initialized");
   } catch (err) {
     logger.error({ err }, "[firebase-admin] init failed — falling back to in-memory");
@@ -46,6 +49,11 @@ function init(): void {
 export function fbDb(): Database | null {
   if (!app && !initFailed) init();
   return db;
+}
+
+export function fbAuth(): Auth | null {
+  if (!app && !initFailed) init();
+  return auth;
 }
 
 export function fbReady(): boolean {

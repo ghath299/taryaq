@@ -18,9 +18,13 @@ import {
   deleteOtp,
   updateOtpAttempts,
   sweepExpiredOtps,
+  setPendingRegistration,
+  getPendingRegistration,
+  deletePendingRegistration,
   type RateRecord,
   type SecurityLogEntry,
 } from "../lib/security-store";
+import { fbAuth } from "../lib/firebase-admin";
 
 const router = Router();
 
@@ -425,6 +429,141 @@ router.get("/security/logs", async (req: Request, res: Response) => {
   }
   const logs = await listRecentLogs(200);
   res.json({ logs });
+});
+
+/* ------------------- Firebase Phone Auth integration ------------------- */
+
+router.post("/register-pending", async (req: Request, res: Response) => {
+  const body = req.body as {
+    phoneNumber?: string;
+    fullName?: string;
+    honeypot?: string;
+  };
+
+  const phoneRaw = typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
+  const nameRaw = typeof body.fullName === "string" ? sanitizeName(body.fullName) : "";
+  const honeypot = typeof body.honeypot === "string" ? body.honeypot : "";
+  const ip = req.ip ?? "unknown";
+
+  if (honeypot.length > 0) {
+    await logSecurity({
+      phoneHash: phoneRaw ? hashPhone(phoneRaw) : "anon",
+      action: "honeypot_triggered",
+      ip,
+      meta: { stage: "register_pending" },
+    });
+    res.status(400).json({ message: CONFIG.GENERIC_BLOCKED });
+    return;
+  }
+
+  if (!phoneRaw || !CONFIG.IRAQ_PHONE_REGEX.test(phoneRaw)) {
+    await logSecurity({
+      phoneHash: phoneRaw ? hashPhone(phoneRaw) : "invalid",
+      action: "invalid_input",
+      ip,
+      meta: { stage: "register_pending", reason: "phone" },
+    });
+    res.status(400).json({ message: "رقم الهاتف العراقي غير صحيح" });
+    return;
+  }
+
+  const wordCount = nameRaw.split(/\s+/).filter((w) => w.length > 1).length;
+  if (!nameRaw || wordCount < CONFIG.NAME_MIN_WORDS) {
+    res.status(400).json({ message: "الاسم يجب أن يكون ثلاثياً على الأقل" });
+    return;
+  }
+
+  const phoneHash = hashPhone(phoneRaw);
+  const dec = await tryConsumeSend(phoneHash);
+  if (dec.blocked) {
+    if (dec.newlyBlocked) {
+      await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "register_pending" } });
+    }
+    res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
+    return;
+  }
+
+  await setPendingRegistration(phoneHash, { fullName: nameRaw, createdAt: Date.now() });
+  await logSecurity({ phoneHash, action: "register_pending", ip });
+
+  res.json({
+    success: true,
+    message: "تم التسجيل المبدئي. أكمل التحقق عبر Firebase",
+    expiresInMs: 15 * 60 * 1000,
+  });
+});
+
+router.post("/verify-firebase-token", async (req: Request, res: Response) => {
+  const body = req.body as { idToken?: string };
+  const idToken = typeof body.idToken === "string" ? body.idToken.trim() : "";
+  const ip = req.ip ?? "unknown";
+
+  if (!idToken) {
+    res.status(400).json({ success: false, message: "idToken مطلوب" });
+    return;
+  }
+
+  const auth = fbAuth();
+  if (!auth) {
+    logger.error("[verify-firebase-token] Firebase Admin not initialized");
+    res.status(503).json({ success: false, message: "خدمة المصادقة غير متاحة حالياً" });
+    return;
+  }
+
+  let decoded;
+  try {
+    decoded = await auth.verifyIdToken(idToken, true);
+  } catch (err) {
+    logger.warn({ err }, "[verify-firebase-token] verification failed");
+    await logSecurity({ phoneHash: "unknown", action: "fb_token_invalid", ip });
+    res.status(401).json({ success: false, message: "رمز Firebase غير صالح أو منتهي الصلاحية" });
+    return;
+  }
+
+  const phoneFromToken = decoded.phone_number;
+  if (!phoneFromToken) {
+    await logSecurity({ phoneHash: "unknown", action: "fb_token_no_phone", ip, meta: { uid: decoded.uid } });
+    res.status(400).json({ success: false, message: "الرمز لا يحتوي على رقم هاتف" });
+    return;
+  }
+
+  // تحويل صيغة E.164 (+9647xxxxxxxxx) إلى الصيغة المحلية (07xxxxxxxxx)
+  let phoneRaw = phoneFromToken.replace(/\D/g, "");
+  if (phoneRaw.startsWith("964")) phoneRaw = "0" + phoneRaw.slice(3);
+  phoneRaw = phoneRaw.slice(0, CONFIG.PHONE_MAX_LENGTH);
+
+  if (!CONFIG.IRAQ_PHONE_REGEX.test(phoneRaw)) {
+    await logSecurity({
+      phoneHash: hashPhone(phoneRaw),
+      action: "fb_phone_invalid",
+      ip,
+      meta: { original: phoneFromToken },
+    });
+    res.status(400).json({ success: false, message: "رقم الهاتف ليس عراقياً صالحاً" });
+    return;
+  }
+
+  const phoneHash = hashPhone(phoneRaw);
+  const pending = await getPendingRegistration(phoneHash);
+  if (pending) await deletePendingRegistration(phoneHash);
+  await resetRateOnSuccess(phoneHash);
+  await logSecurity({
+    phoneHash,
+    action: "fb_verify_success",
+    ip,
+    meta: { uid: decoded.uid, hasPending: !!pending },
+  });
+
+  const tokens = await issueTokens(phoneRaw);
+  res.json({
+    success: true,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt,
+    fullName: pending?.fullName,
+    phoneNumber: phoneRaw,
+  });
 });
 
 export default router;

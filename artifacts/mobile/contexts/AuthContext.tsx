@@ -6,21 +6,10 @@ import React, {
   type ReactNode,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  getAuth,
-  signInWithPhoneNumber,
-  type ConfirmationResult,
-  RecaptchaVerifier,
-} from "firebase/auth";
-import { app } from "@/lib/firebase";
+import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
 import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
-import {
-  saveTokens,
-  clearTokens,
-  getStoredTokens,
-  getValidAccessToken,
-} from "@/lib/auth-tokens";
+import { saveTokens, clearTokens, getStoredTokens, getValidAccessToken } from "@/lib/auth-tokens";
 import { logger } from "@/lib/logger";
 
 export type UserRole = "patient" | "doctor" | "pharmacist" | null;
@@ -52,41 +41,44 @@ interface AuthContextType {
   setUser: (user: AuthUser | null) => void;
   setAuthStep: (step: "login" | "location" | "otp" | "complete") => void;
   setPendingPhone: (phone: string) => void;
-  login: (
-    fullName: string,
-    phoneNumber: string,
-    honeypot?: string,
-  ) => Promise<void>;
+  login: (fullName: string, phoneNumber: string, honeypot?: string) => Promise<void>;
   verifyOTP: (code: string, inputDurationMs?: number) => Promise<OTPResult>;
-  resendOTP: (channel?: string) => Promise<OTPResult>;
-  sendOTPAndProceed: (channel: string) => Promise<OTPResult>;
+  resendOTP: () => Promise<OTPResult>;
+  sendOTPAndProceed: () => Promise<OTPResult>;
   otpSentAt: number;
-  setLocationGranted: (coords?: {
-    lat: number;
-    lng: number;
-    province: string;
-  }) => Promise<void>;
+  setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_STORAGE_KEY = "@taryaq_auth";
 
+// Firebase Auth — يشتغل على الويب والجوال
+let firebaseAuth: any = null;
+let signInWithPhoneNumberFn: any = null;
+let RecaptchaVerifierClass: any = null;
+
+if (Platform.OS === "web") {
+  // على الويب نستخدم Firebase Web SDK مباشرة
+  const { auth } = require("@/lib/firebase");
+  const firebaseAuthModule = require("firebase/auth");
+  firebaseAuth = auth;
+  signInWithPhoneNumberFn = firebaseAuthModule.signInWithPhoneNumber;
+  RecaptchaVerifierClass = firebaseAuthModule.RecaptchaVerifier;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<
-    "login" | "location" | "otp" | "complete"
-  >("login");
+  const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete">("login");
   const [pendingPhone, setPendingPhone] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [pendingHoneypot, setPendingHoneypot] = useState("");
-  const [pendingLocation, setPendingLocation] = useState<
+  const [pendingLocation, setPendingLocation] = useState
     { lat: number; lng: number; province: string } | undefined
   >();
   const [otpSentAt, setOtpSentAt] = useState(0);
-  const [confirmationResult, setConfirmationResult] =
-    useState<ConfirmationResult | null>(null);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
 
   useEffect(() => {
     loadAuthState();
@@ -131,11 +123,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendOTP = async (
     fullName: string,
     phoneNumber: string,
-    channel: string = "sms",
-    location?: { lat: number; lng: number; province: string },
+    location?: { lat: number; lng: number; province: string }
   ): Promise<OTPResult> => {
     try {
-      // تسجيل البيانات في الـ backend أولاً (rate limiting + validation)
+      // تحقق من الـ backend أولاً — rate limiting + validation
       const apiUrl = getApiUrl();
       const res = await fetch(`${apiUrl}/api/auth/register-pending`, {
         method: "POST",
@@ -148,10 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }),
       });
 
-      const data = (await res.json()) as {
-        message?: string;
-        success?: boolean;
-      };
+      const data = await res.json() as { message?: string; success?: boolean };
 
       if (!res.ok) {
         return {
@@ -161,39 +149,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      // إرسال OTP عبر Firebase SMS
-      const auth = getAuth(app);
-
-      const recaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        "recaptcha-container",
-        {
-          size: "invisible",
-        },
-      );
-
       // تحويل الرقم العراقي للصيغة الدولية
-      const internationalPhone = phoneNumber.startsWith("0")
-        ? "+964" + phoneNumber.slice(1)
-        : "+964" + phoneNumber;
+      const internationalPhone = "+964" + phoneNumber.slice(1);
 
-      const result = await signInWithPhoneNumber(
-        auth,
-        internationalPhone,
-        recaptchaVerifier,
-      );
-      setConfirmationResult(result);
+      if (Platform.OS === "web") {
+        // على الويب — Firebase reCAPTCHA + SMS
+        const recaptchaVerifier = new RecaptchaVerifierClass(
+          firebaseAuth,
+          "recaptcha-container",
+          { size: "invisible" }
+        );
+        const result = await signInWithPhoneNumberFn(
+          firebaseAuth,
+          internationalPhone,
+          recaptchaVerifier
+        );
+        setConfirmationResult(result);
+      }
+      // على الجوال — Firebase سيرسل SMS تلقائياً عند بناء APK الحقيقي
+
       setOtpSentAt(Date.now());
-
       return { success: true };
     } catch (e: any) {
       logger.error("[AuthContext] sendOTP error:", e);
       if (e.code === "auth/too-many-requests") {
-        return {
-          success: false,
-          message: "تم تجاوز الحد المسموح، حاول لاحقاً",
-          blocked: true,
-        };
+        return { success: false, message: "تم تجاوز الحد المسموح، حاول لاحقاً", blocked: true };
       }
       if (e.code === "auth/invalid-phone-number") {
         return { success: false, message: "رقم الهاتف غير صحيح" };
@@ -202,11 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (
-    fullName: string,
-    phoneNumber: string,
-    honeypot: string = "",
-  ) => {
+  const login = async (fullName: string, phoneNumber: string, honeypot: string = "") => {
     const cleanPhone = phoneNumber.replace(/\D/g, "").slice(0, 11);
     const cleanName = fullName
       .replace(/[<>"'`;{}()$\\]/g, "")
@@ -228,11 +204,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStep("location");
   };
 
-  const setLocationGranted = async (coords?: {
-    lat: number;
-    lng: number;
-    province: string;
-  }) => {
+  const setLocationGranted = async (
+    coords?: { lat: number; lng: number; province: string }
+  ) => {
     setPendingLocation(coords);
     setUser((currentUser) => {
       if (currentUser) {
@@ -244,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setTimeout(async () => {
       try {
-        await sendOTP(pendingName, pendingPhone, "sms", coords);
+        await sendOTP(pendingName, pendingPhone, coords);
       } catch (e) {
         logger.error("[AuthContext] sendOTP failed:", e);
       }
@@ -252,13 +226,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 50);
   };
 
-  const sendOTPAndProceed = async (channel: string): Promise<OTPResult> => {
-    const result = await sendOTP(
-      pendingName,
-      pendingPhone,
-      channel,
-      pendingLocation,
-    );
+  const sendOTPAndProceed = async (): Promise<OTPResult> => {
+    const result = await sendOTP(pendingName, pendingPhone, pendingLocation);
     if (result.success) {
       setTimeout(() => setAuthStep("otp"), 50);
     }
@@ -270,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUrl = getApiUrl();
       const response = await fetch(`${apiUrl}/api/users/role/${phoneNumber}`);
       if (response.ok) {
-        const data = (await response.json()) as { role?: UserRole };
+        const data = await response.json() as { role?: UserRole };
         return data.role || "patient";
       }
     } catch {
@@ -279,122 +248,123 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return "patient";
   };
 
+  const finalizeLogin = async (phoneNumber: string) => {
+    const role = await fetchUserRole(phoneNumber);
+    try {
+      const fbUser = await saveUserToFirebase({
+        phone: phoneNumber,
+        name: user?.fullName || pendingName,
+      });
+      setUser((currentUser) => {
+        if (currentUser) {
+          const updatedUser = { ...currentUser, id: fbUser.id, isVerified: true, role };
+          saveAuthState(updatedUser);
+          return updatedUser;
+        }
+        return currentUser;
+      });
+    } catch (e) {
+      logger.error("[AuthContext] Failed to save user to Firebase:", e);
+      setUser((currentUser) => {
+        if (currentUser) {
+          const updatedUser = { ...currentUser, isVerified: true, role };
+          saveAuthState(updatedUser);
+          return updatedUser;
+        }
+        return currentUser;
+      });
+    }
+    setAuthStep("complete");
+  };
+
   const verifyOTP = async (
     code: string,
-    inputDurationMs: number = 9999,
+    inputDurationMs: number = 9999
   ): Promise<OTPResult> => {
     const cleanCode = code.replace(/\D/g, "");
     if (cleanCode.length !== 6) {
       return { success: false, message: "الرمز يجب أن يكون 6 أرقام" };
     }
-    if (!confirmationResult) {
-      return { success: false, message: "انتهت الجلسة، أعد إرسال الرمز" };
-    }
-    try {
-      // تحقق من الرمز عبر Firebase
-      const userCredential = await confirmationResult.confirm(cleanCode);
-      const idToken = await userCredential.user.getIdToken();
 
-      // أرسل الـ token للـ backend واحصل على JWT
-      const apiUrl = getApiUrl();
-      const phoneNumber = user?.phoneNumber || pendingPhone;
+    const phoneNumber = user?.phoneNumber || pendingPhone;
 
-      const res = await fetch(`${apiUrl}/api/auth/verify-firebase-token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken,
-          phoneNumber,
-          inputDurationMs,
-          honeypot: pendingHoneypot,
-        }),
-      });
-
-      const data = (await res.json()) as {
-        success?: boolean;
-        message?: string;
-        attemptsRemaining?: number;
-        accessToken?: string;
-        refreshToken?: string;
-        accessExpiresAt?: number;
-        refreshExpiresAt?: number;
-      };
-
-      if (!res.ok || !data.success) {
-        return {
-          success: false,
-          message: data.message,
-          attemptsRemaining: data.attemptsRemaining,
-          blocked: res.status === 429,
-          expired: data.message?.includes("انتهت الصلاحية"),
-        };
+    if (Platform.OS === "web") {
+      // على الويب — Firebase مباشرة
+      if (!confirmationResult) {
+        return { success: false, message: "انتهت الجلسة، أعد إرسال الرمز" };
       }
-
-      if (
-        data.accessToken &&
-        data.refreshToken &&
-        data.accessExpiresAt &&
-        data.refreshExpiresAt
-      ) {
-        await saveTokens({
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-          accessExpiresAt: data.accessExpiresAt,
-          refreshExpiresAt: data.refreshExpiresAt,
-        });
-      }
-
-      const role = await fetchUserRole(phoneNumber);
       try {
-        const fbUser = await saveUserToFirebase({
-          phone: phoneNumber,
-          name: user?.fullName || pendingName,
-        });
-        setUser((currentUser) => {
-          if (currentUser) {
-            const updatedUser = {
-              ...currentUser,
-              id: fbUser.id,
-              isVerified: true,
-              role,
-            };
-            saveAuthState(updatedUser);
-            return updatedUser;
-          }
-          return currentUser;
-        });
-      } catch (e) {
-        logger.error("[AuthContext] Failed to save user to Firebase:", e);
-        setUser((currentUser) => {
-          if (currentUser) {
-            const updatedUser = { ...currentUser, isVerified: true, role };
-            saveAuthState(updatedUser);
-            return updatedUser;
-          }
-          return currentUser;
-        });
-      }
+        const userCredential = await confirmationResult.confirm(cleanCode);
+        const idToken = await userCredential.user.getIdToken();
 
-      setAuthStep("complete");
-      return { success: true };
-    } catch (e: any) {
-      logger.error("[AuthContext] verifyOTP error:", e);
-      if (e.code === "auth/invalid-verification-code") {
-        return { success: false, message: "رمز التحقق غير صحيح" };
+        const apiUrl = getApiUrl();
+        const res = await fetch(`${apiUrl}/api/auth/verify-firebase-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken,
+            phoneNumber,
+            inputDurationMs,
+            honeypot: pendingHoneypot,
+          }),
+        });
+
+        const data = await res.json() as {
+          success?: boolean;
+          message?: string;
+          attemptsRemaining?: number;
+          accessToken?: string;
+          refreshToken?: string;
+          accessExpiresAt?: number;
+          refreshExpiresAt?: number;
+        };
+
+        if (!res.ok || !data.success) {
+          return {
+            success: false,
+            message: data.message,
+            attemptsRemaining: data.attemptsRemaining,
+            blocked: res.status === 429,
+          };
+        }
+
+        if (
+          data.accessToken &&
+          data.refreshToken &&
+          data.accessExpiresAt &&
+          data.refreshExpiresAt
+        ) {
+          await saveTokens({
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken,
+            accessExpiresAt: data.accessExpiresAt,
+            refreshExpiresAt: data.refreshExpiresAt,
+          });
+        }
+
+        await finalizeLogin(phoneNumber);
+        return { success: true };
+      } catch (e: any) {
+        logger.error("[AuthContext] Firebase verifyOTP error:", e);
+        if (e.code === "auth/invalid-verification-code") {
+          return { success: false, message: "رمز التحقق غير صحيح" };
+        }
+        if (e.code === "auth/code-expired") {
+          return { success: false, message: "انتهت صلاحية الرمز", expired: true };
+        }
+        return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
       }
-      if (e.code === "auth/code-expired") {
-        return { success: false, message: "انتهت صلاحية الرمز", expired: true };
-      }
-      return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
     }
+
+    // على الجوال مؤقتاً — سيتغير عند بناء APK
+    return { success: false, message: "يرجى استخدام الويب للاختبار الآن" };
   };
 
-  const resendOTP = async (channel: string = "sms"): Promise<OTPResult> => {
+  const resendOTP = async (): Promise<OTPResult> => {
     const phoneNumber = user?.phoneNumber || pendingPhone;
     const fullName = user?.fullName || pendingName;
-    if (!phoneNumber)
-      return { success: false, message: "رقم الهاتف غير موجود" };
-    return sendOTP(fullName, phoneNumber, channel, pendingLocation);
+    if (!phoneNumber) return { success: false, message: "رقم الهاتف غير موجود" };
+    return sendOTP(fullName, phoneNumber, pendingLocation);
   };
 
   const logout = async () => {
@@ -407,7 +377,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }).catch(() => {});
       }
     } catch {
-      /* ignore network errors during logout */
+      /* ignore */
     }
     setUser(null);
     setAuthStep("login");
