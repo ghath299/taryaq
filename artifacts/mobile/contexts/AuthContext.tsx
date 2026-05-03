@@ -6,9 +6,21 @@ import React, {
   type ReactNode,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  getAuth,
+  signInWithPhoneNumber,
+  type ConfirmationResult,
+  RecaptchaVerifier,
+} from "firebase/auth";
+import { app } from "@/lib/firebase";
 import { getApiUrl } from "@/lib/query-client";
 import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
-import { saveTokens, clearTokens, getStoredTokens, getValidAccessToken } from "@/lib/auth-tokens";
+import {
+  saveTokens,
+  clearTokens,
+  getStoredTokens,
+  getValidAccessToken,
+} from "@/lib/auth-tokens";
 import { logger } from "@/lib/logger";
 
 export type UserRole = "patient" | "doctor" | "pharmacist" | null;
@@ -40,12 +52,20 @@ interface AuthContextType {
   setUser: (user: AuthUser | null) => void;
   setAuthStep: (step: "login" | "location" | "otp" | "complete") => void;
   setPendingPhone: (phone: string) => void;
-  login: (fullName: string, phoneNumber: string, honeypot?: string) => Promise<void>;
+  login: (
+    fullName: string,
+    phoneNumber: string,
+    honeypot?: string,
+  ) => Promise<void>;
   verifyOTP: (code: string, inputDurationMs?: number) => Promise<OTPResult>;
   resendOTP: (channel?: string) => Promise<OTPResult>;
   sendOTPAndProceed: (channel: string) => Promise<OTPResult>;
   otpSentAt: number;
-  setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
+  setLocationGranted: (coords?: {
+    lat: number;
+    lng: number;
+    province: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -55,12 +75,18 @@ const AUTH_STORAGE_KEY = "@taryaq_auth";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete">("login");
+  const [authStep, setAuthStep] = useState<
+    "login" | "location" | "otp" | "complete"
+  >("login");
   const [pendingPhone, setPendingPhone] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [pendingHoneypot, setPendingHoneypot] = useState("");
-  const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number; province: string } | undefined>();
+  const [pendingLocation, setPendingLocation] = useState<
+    { lat: number; lng: number; province: string } | undefined
+  >();
   const [otpSentAt, setOtpSentAt] = useState(0);
+  const [confirmationResult, setConfirmationResult] =
+    useState<ConfirmationResult | null>(null);
 
   useEffect(() => {
     loadAuthState();
@@ -105,17 +131,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendOTP = async (
     fullName: string,
     phoneNumber: string,
-    channel: string = "telegram",
-    location?: { lat: number; lng: number; province: string }
+    channel: string = "sms",
+    location?: { lat: number; lng: number; province: string },
   ): Promise<OTPResult> => {
     try {
+      // تسجيل البيانات في الـ backend أولاً (rate limiting + validation)
       const apiUrl = getApiUrl();
-      const res = await fetch(`${apiUrl}/api/auth/send-otp`, {
+      const res = await fetch(`${apiUrl}/api/auth/register-pending`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, fullName, channel, location, honeypot: pendingHoneypot }),
+        body: JSON.stringify({
+          phoneNumber,
+          fullName,
+          location,
+          honeypot: pendingHoneypot,
+        }),
       });
-      const data = await res.json() as { message?: string; success?: boolean; sentAt?: number };
+
+      const data = (await res.json()) as {
+        message?: string;
+        success?: boolean;
+      };
+
       if (!res.ok) {
         return {
           success: false,
@@ -123,18 +160,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           blocked: res.status === 429,
         };
       }
-      if (data.sentAt) setOtpSentAt(data.sentAt);
-      else setOtpSentAt(Date.now());
+
+      // إرسال OTP عبر Firebase SMS
+      const auth = getAuth(app);
+
+      const recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "recaptcha-container",
+        {
+          size: "invisible",
+        },
+      );
+
+      // تحويل الرقم العراقي للصيغة الدولية
+      const internationalPhone = phoneNumber.startsWith("0")
+        ? "+964" + phoneNumber.slice(1)
+        : "+964" + phoneNumber;
+
+      const result = await signInWithPhoneNumber(
+        auth,
+        internationalPhone,
+        recaptchaVerifier,
+      );
+      setConfirmationResult(result);
+      setOtpSentAt(Date.now());
+
       return { success: true };
-    } catch (e) {
+    } catch (e: any) {
       logger.error("[AuthContext] sendOTP error:", e);
-      return { success: false, message: "خطأ في الاتصال بالخادم" };
+      if (e.code === "auth/too-many-requests") {
+        return {
+          success: false,
+          message: "تم تجاوز الحد المسموح، حاول لاحقاً",
+          blocked: true,
+        };
+      }
+      if (e.code === "auth/invalid-phone-number") {
+        return { success: false, message: "رقم الهاتف غير صحيح" };
+      }
+      return { success: false, message: "فشل إرسال رمز التحقق" };
     }
   };
 
-  const login = async (fullName: string, phoneNumber: string, honeypot: string = "") => {
+  const login = async (
+    fullName: string,
+    phoneNumber: string,
+    honeypot: string = "",
+  ) => {
     const cleanPhone = phoneNumber.replace(/\D/g, "").slice(0, 11);
-    const cleanName = fullName.replace(/[<>"'`;{}()$\\]/g, "").replace(/\s+/g, " ").trim().slice(0, 50);
+    const cleanName = fullName
+      .replace(/[<>"'`;{}()$\\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 50);
     setPendingPhone(cleanPhone);
     setPendingName(cleanName);
     setPendingHoneypot(honeypot);
@@ -150,7 +228,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStep("location");
   };
 
-  const setLocationGranted = async (coords?: { lat: number; lng: number; province: string }) => {
+  const setLocationGranted = async (coords?: {
+    lat: number;
+    lng: number;
+    province: string;
+  }) => {
     setPendingLocation(coords);
     setUser((currentUser) => {
       if (currentUser) {
@@ -162,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setTimeout(async () => {
       try {
-        await sendOTP(pendingName, pendingPhone, "telegram", coords);
+        await sendOTP(pendingName, pendingPhone, "sms", coords);
       } catch (e) {
         logger.error("[AuthContext] sendOTP failed:", e);
       }
@@ -171,7 +253,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const sendOTPAndProceed = async (channel: string): Promise<OTPResult> => {
-    const result = await sendOTP(pendingName, pendingPhone, channel, pendingLocation);
+    const result = await sendOTP(
+      pendingName,
+      pendingPhone,
+      channel,
+      pendingLocation,
+    );
     if (result.success) {
       setTimeout(() => setAuthStep("otp"), 50);
     }
@@ -183,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUrl = getApiUrl();
       const response = await fetch(`${apiUrl}/api/users/role/${phoneNumber}`);
       if (response.ok) {
-        const data = await response.json() as { role?: UserRole };
+        const data = (await response.json()) as { role?: UserRole };
         return data.role || "patient";
       }
     } catch {
@@ -192,20 +279,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return "patient";
   };
 
-  const verifyOTP = async (code: string, inputDurationMs: number = 9999): Promise<OTPResult> => {
+  const verifyOTP = async (
+    code: string,
+    inputDurationMs: number = 9999,
+  ): Promise<OTPResult> => {
     const cleanCode = code.replace(/\D/g, "");
     if (cleanCode.length !== 6) {
       return { success: false, message: "الرمز يجب أن يكون 6 أرقام" };
     }
+    if (!confirmationResult) {
+      return { success: false, message: "انتهت الجلسة، أعد إرسال الرمز" };
+    }
     try {
+      // تحقق من الرمز عبر Firebase
+      const userCredential = await confirmationResult.confirm(cleanCode);
+      const idToken = await userCredential.user.getIdToken();
+
+      // أرسل الـ token للـ backend واحصل على JWT
       const apiUrl = getApiUrl();
       const phoneNumber = user?.phoneNumber || pendingPhone;
-      const res = await fetch(`${apiUrl}/api/auth/verify-otp`, {
+
+      const res = await fetch(`${apiUrl}/api/auth/verify-firebase-token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, otp: cleanCode, inputDurationMs, honeypot: pendingHoneypot }),
+        body: JSON.stringify({
+          idToken,
+          phoneNumber,
+          inputDurationMs,
+          honeypot: pendingHoneypot,
+        }),
       });
-      const data = await res.json() as {
+
+      const data = (await res.json()) as {
         success?: boolean;
         message?: string;
         attemptsRemaining?: number;
@@ -214,6 +319,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessExpiresAt?: number;
         refreshExpiresAt?: number;
       };
+
       if (!res.ok || !data.success) {
         return {
           success: false,
@@ -223,7 +329,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           expired: data.message?.includes("انتهت الصلاحية"),
         };
       }
-      if (data.accessToken && data.refreshToken && data.accessExpiresAt && data.refreshExpiresAt) {
+
+      if (
+        data.accessToken &&
+        data.refreshToken &&
+        data.accessExpiresAt &&
+        data.refreshExpiresAt
+      ) {
         await saveTokens({
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
@@ -231,6 +343,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           refreshExpiresAt: data.refreshExpiresAt,
         });
       }
+
       const role = await fetchUserRole(phoneNumber);
       try {
         const fbUser = await saveUserToFirebase({
@@ -239,7 +352,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setUser((currentUser) => {
           if (currentUser) {
-            const updatedUser = { ...currentUser, id: fbUser.id, isVerified: true, role };
+            const updatedUser = {
+              ...currentUser,
+              id: fbUser.id,
+              isVerified: true,
+              role,
+            };
             saveAuthState(updatedUser);
             return updatedUser;
           }
@@ -256,18 +374,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return currentUser;
         });
       }
+
       setAuthStep("complete");
       return { success: true };
-    } catch (err) {
-      logger.error("[AuthContext] verifyOTP error:", err);
+    } catch (e: any) {
+      logger.error("[AuthContext] verifyOTP error:", e);
+      if (e.code === "auth/invalid-verification-code") {
+        return { success: false, message: "رمز التحقق غير صحيح" };
+      }
+      if (e.code === "auth/code-expired") {
+        return { success: false, message: "انتهت صلاحية الرمز", expired: true };
+      }
       return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
     }
   };
 
-  const resendOTP = async (channel: string = "telegram"): Promise<OTPResult> => {
+  const resendOTP = async (channel: string = "sms"): Promise<OTPResult> => {
     const phoneNumber = user?.phoneNumber || pendingPhone;
     const fullName = user?.fullName || pendingName;
-    if (!phoneNumber) return { success: false, message: "رقم الهاتف غير موجود" };
+    if (!phoneNumber)
+      return { success: false, message: "رقم الهاتف غير موجود" };
     return sendOTP(fullName, phoneNumber, channel, pendingLocation);
   };
 
@@ -290,6 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingHoneypot("");
     setPendingLocation(undefined);
     setOtpSentAt(0);
+    setConfirmationResult(null);
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     await clearTokens();
   };
