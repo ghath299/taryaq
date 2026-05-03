@@ -34,22 +34,23 @@ export default function EmergencyModal({ visible, onClose }: EmergencyModalProps
         if (status === "granted") {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           const { latitude, longitude } = loc.coords;
+          const q = encodeURIComponent("مستشفى");
           const url = Platform.select({
-            ios: `comgooglemaps://?center=${latitude},${longitude}&q=hospital&zoom=14`,
-            android: `geo:${latitude},${longitude}?q=hospital`,
-            default: `https://www.google.com/maps/search/hospital/@${latitude},${longitude},14z`,
+            ios: `comgooglemaps://?center=${latitude},${longitude}&q=${q}&zoom=14`,
+            android: `geo:${latitude},${longitude}?q=${q}`,
+            default: `https://www.google.com/maps/search/${q}/@${latitude},${longitude},14z`,
           });
-          const fallback = `https://www.google.com/maps/search/hospital/@${latitude},${longitude},14z`;
+          const fallback = `https://www.google.com/maps/search/${q}/@${latitude},${longitude},14z`;
           const canOpen = await Linking.canOpenURL(url!);
           await Linking.openURL(canOpen ? url! : fallback);
         } else {
-          await Linking.openURL("https://www.google.com/maps/search/hospital");
+          await Linking.openURL(`https://www.google.com/maps/search/${encodeURIComponent("مستشفى")}`);
         }
       } else {
-        await Linking.openURL("https://www.google.com/maps/search/hospital");
+        await Linking.openURL(`https://www.google.com/maps/search/${encodeURIComponent("مستشفى")}`);
       }
     } catch {
-      await Linking.openURL("https://www.google.com/maps/search/hospital");
+      await Linking.openURL(`https://www.google.com/maps/search/${encodeURIComponent("مستشفى")}`);
     } finally {
       setIsLocating(false);
       handleClose();
