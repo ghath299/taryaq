@@ -84,7 +84,7 @@ export default function LoginScreen() {
         <Animated.View entering={FadeIn.duration(500)} style={styles.headerSection}>
           <View style={styles.titleRow}>
             <ThemedText
-              style={[styles.appName, { color: titleColor, fontFamily: "System" }]}
+              style={[styles.appName, { color: titleColor, fontFamily: "Cairo-Regular" }]}
             >
               ترياق
             </ThemedText>
@@ -93,7 +93,7 @@ export default function LoginScreen() {
           <ThemedText
             style={[
               styles.tagline,
-              { color: isDark ? "#8B95A5" : "#9BA5B5", fontFamily: "System" },
+              { color: isDark ? "#8B95A5" : "#9BA5B5", fontFamily: "Cairo-Regular" },
             ]}
           >
             رفيقك نحو صحة أفضل
@@ -110,12 +110,12 @@ export default function LoginScreen() {
 
         <View style={styles.welcomeBlock}>
           <View style={styles.welcomeRow}>
-            <ThemedText style={[styles.welcomeSmall, { color: theme.text, fontFamily: "System" }]}>
+            <ThemedText style={[styles.welcomeSmall, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
               أهلاً وسهلاً بك في ترياق
             </ThemedText>
             <ThemedText style={styles.welcomeLeaf}>🌿</ThemedText>
           </View>
-          <ThemedText style={[styles.welcomeBig, { color: theme.text, fontFamily: "System" }]}>
+          <ThemedText style={[styles.welcomeBig, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
             سجّل دخولك للمتابعة
           </ThemedText>
         </View>
@@ -138,13 +138,13 @@ export default function LoginScreen() {
                   backgroundColor: inputBg,
                   borderColor: errors.name ? theme.error : inputBorder,
                   color: theme.text,
-                  fontFamily: "System",
+                  fontFamily: "Cairo-Regular",
                 },
               ]}
               textAlign="right"
             />
             {errors.name ? (
-              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "System" }]}>
+              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "Cairo-Regular" }]}>
                 {errors.name}
               </ThemedText>
             ) : null}
@@ -176,19 +176,19 @@ export default function LoginScreen() {
                 onSubmitEditing={handleSubmit}
                 style={[
                   styles.phoneInput,
-                  { color: theme.text, fontFamily: "System" },
+                  { color: theme.text, fontFamily: "Cairo-Regular" },
                 ]}
                 textAlign="right"
               />
               <View style={styles.phoneDivider} />
               <ThemedText
-                style={[styles.phonePrefix, { color: theme.text, fontFamily: "System" }]}
+                style={[styles.phonePrefix, { color: theme.text, fontFamily: "Cairo-Regular" }]}
               >
                 +964
               </ThemedText>
             </View>
             {errors.phone ? (
-              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "System" }]}>
+              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "Cairo-Regular" }]}>
                 {errors.phone}
               </ThemedText>
             ) : null}
@@ -217,7 +217,7 @@ export default function LoginScreen() {
               },
             ]}
           >
-            <ThemedText style={[styles.submitText, { fontFamily: "System" }]}>
+            <ThemedText style={[styles.submitText, { fontFamily: "Cairo-Regular" }]}>
               {isLoading ? "جاري المتابعة..." : "متابعة"}
             </ThemedText>
           </Pressable>
@@ -225,12 +225,12 @@ export default function LoginScreen() {
 
         <View style={styles.footer}>
           <ThemedText
-            style={[styles.footerText, { color: isDark ? "#6C757D" : "#9BA5B5", fontFamily: "System" }]}
+            style={[styles.footerText, { color: isDark ? "#6C757D" : "#9BA5B5", fontFamily: "Cairo-Regular" }]}
           >
             بالمتابعة، أنت توافق على{" "}
-            <ThemedText style={{ color: titleColor, fontFamily: "System" }}>الشروط والأحكام</ThemedText>
+            <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>الشروط والأحكام</ThemedText>
             {" "}و{" "}
-            <ThemedText style={{ color: titleColor, fontFamily: "System" }}>سياسة الخصوصية</ThemedText>
+            <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>سياسة الخصوصية</ThemedText>
           </ThemedText>
         </View>
       </ScrollView>

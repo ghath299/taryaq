@@ -26,24 +26,26 @@ export function ThemedText({
 
   const getTypeStyle = () => {
     switch (type) {
-      case "hero": return Typography.hero;
-      case "h1": return Typography.h1;
-      case "h2": return Typography.h2;
-      case "h3": return Typography.h3;
-      case "h4": return Typography.h4;
-      case "body": return Typography.body;
-      case "small": return Typography.small;
-      case "caption": return Typography.caption;
-      case "link": return Typography.link;
-      default: return Typography.body;
+      case "hero":    return Typography.hero;
+      case "h1":     return Typography.h1;
+      case "h2":     return Typography.h2;
+      case "h3":     return Typography.h3;
+      case "h4":     return Typography.h4;
+      case "body":   return Typography.body;
+      case "small":  return Typography.small;
+      case "caption":return Typography.caption;
+      case "link":   return Typography.link;
+      default:       return Typography.body;
     }
   };
 
   const getFontFamily = () => {
     const weight = getTypeStyle().fontWeight;
-    if (weight === "700") return "System";
-    if (weight === "600" || weight === "500") return "System";
-    return "System";
+    if (weight === "800") return "Cairo-ExtraBold";
+    if (weight === "700") return "Cairo-Bold";
+    if (weight === "600") return "Cairo-SemiBold";
+    if (weight === "500") return "Cairo-Medium";
+    return "Cairo-Regular";
   };
 
   return (

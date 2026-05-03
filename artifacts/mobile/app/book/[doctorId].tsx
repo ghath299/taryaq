@@ -183,7 +183,7 @@ export default function BookAppointmentScreen() {
   const baseInput = {
     backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
     color: theme.text,
-    fontFamily: "System",
+    fontFamily: "Cairo-Regular",
   };
   const inputBorder = (hasError?: boolean) => ({
     borderColor: hasError ? ERROR_COLOR : theme.border,

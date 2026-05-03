@@ -238,7 +238,7 @@ export default function OTPScreen() {
                           ? theme.primary
                           : theme.border,
                       color: theme.text,
-                      fontFamily: "System",
+                      fontFamily: "Cairo-Regular",
                     },
                   ]}
                   textAlign="center"

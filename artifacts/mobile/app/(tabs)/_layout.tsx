@@ -36,7 +36,7 @@ export default function TabLayout() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? theme.card : "#FFFFFF" }]} />
           ) : null,
         tabBarLabelStyle: {
-          fontFamily: "System",
+          fontFamily: "Cairo-Regular",
           fontSize: 11,
         },
         headerStyle: {
@@ -47,7 +47,7 @@ export default function TabLayout() {
         headerBlurEffect: isDark ? "dark" : "light",
         headerTintColor: theme.text,
         headerTitleStyle: {
-          fontFamily: "System",
+          fontFamily: "Cairo-Regular",
           fontSize: 18,
         },
       }}

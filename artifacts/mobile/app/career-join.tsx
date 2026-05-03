@@ -55,7 +55,7 @@ export default function CareerJoinScreen() {
       backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
       borderColor: theme.border,
       color: theme.text,
-      fontFamily: "System",
+      fontFamily: "Cairo-Regular",
     },
   ];
 

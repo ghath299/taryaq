@@ -171,7 +171,7 @@ export function PaymentSheet({
   const inputBase = {
     backgroundColor: isDark ? theme.backgroundSecondary : "#F8FAFC",
     color: theme.text,
-    fontFamily: "System",
+    fontFamily: "Cairo-Regular",
   };
 
   return (

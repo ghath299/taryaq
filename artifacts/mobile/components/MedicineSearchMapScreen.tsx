@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontFamily: "System",
+    fontFamily: "Cairo-Regular",
     fontSize: 14,
   },
 

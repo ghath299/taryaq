@@ -13,9 +13,10 @@ if (typeof window !== "undefined") {
   );
 }
 
+import { useFonts } from "expo-font";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
-import React from "react";
+import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -28,6 +29,17 @@ import { AppProvider } from "@/contexts/AppContext";
 import { useNotificationSetup } from "@/hooks/useNotifications";
 
 setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
+
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap&subset=arabic";
+  document.head.appendChild(link);
+  const style = document.createElement("style");
+  style.textContent = `* { font-family: 'Cairo', system-ui, sans-serif !important; }`;
+  document.head.appendChild(style);
+}
 
 const queryClient = new QueryClient();
 
@@ -108,6 +120,20 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts(
+    Platform.OS === "web"
+      ? {}
+      : {
+          "Cairo-Regular": require("../assets/fonts/Cairo-Regular.ttf"),
+          "Cairo-Medium": require("../assets/fonts/Cairo-Medium.ttf"),
+          "Cairo-SemiBold": require("../assets/fonts/Cairo-SemiBold.ttf"),
+          "Cairo-Bold": require("../assets/fonts/Cairo-Bold.ttf"),
+          "Cairo-ExtraBold": require("../assets/fonts/Cairo-ExtraBold.ttf"),
+        },
+  );
+
+  if (!fontsLoaded && Platform.OS !== "web") return null;
+
   return (
     <SafeAreaProvider>
       <ErrorBoundary>

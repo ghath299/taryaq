@@ -55,6 +55,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-font": "^55.0.6",
     "expo-image-manipulator": "~14.0.8",
     "expo-notifications": "^0.32.17",
     "expo-screen-capture": "~8.0.9",
