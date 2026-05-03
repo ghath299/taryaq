@@ -22,6 +22,16 @@ import { useNotificationSetup } from "@/hooks/useNotifications";
 
 setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
 
+// كتم خطأ fontfaceobserver timeout على الويب — التطبيق يستخدم خطوط النظام كبديل
+if (Platform.OS === "web" && typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (event) => {
+    const msg = String(event.reason?.message ?? event.reason ?? "");
+    if (msg.includes("ms timeout exceeded") || msg.includes("fontfaceobserver")) {
+      event.preventDefault();
+    }
+  });
+}
+
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
