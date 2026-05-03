@@ -134,7 +134,6 @@ export default function HomeScreen() {
       >
         {/* HEADER */}
         <Animated.View
-          entering={FadeIn.duration(300)}
           style={[
             styles.header,
             { paddingTop: Platform.OS === "web" ? 60 : 12 },
@@ -217,7 +216,6 @@ export default function HomeScreen() {
 
         {/* SEARCH BAR */}
         <Animated.View
-          entering={FadeInDown.delay(80).duration(400)}
           style={styles.searchSection}
         >
           <Pressable
@@ -244,7 +242,6 @@ export default function HomeScreen() {
 
         {/* HERO ADS CAROUSEL */}
         <Animated.View
-          entering={FadeInDown.delay(150).duration(450)}
           style={styles.bannerWrap}
         >
           <AdsCarousel slides={adsSlides} horizontalPadding={0} />
@@ -252,13 +249,11 @@ export default function HomeScreen() {
 
         {/* QUICK SERVICES */}
         <Animated.View
-          entering={FadeInUp.delay(220).duration(400)}
           style={styles.quickRow}
         >
           {quickServices.map((svc, i) => (
             <Animated.View
               key={svc.id}
-              entering={FadeInUp.delay(260 + i * 60).duration(350)}
               style={styles.quickItemWrap}
             >
               <Pressable
@@ -292,7 +287,6 @@ export default function HomeScreen() {
 
         {/* FEATURED DOCTORS */}
         <Animated.View
-          entering={FadeInUp.delay(380).duration(400)}
           style={styles.section}
         >
           <View style={styles.sectionHeader}>
@@ -322,7 +316,6 @@ export default function HomeScreen() {
             {featuredDoctors.map((doc, i) => (
               <Animated.View
                 key={doc.id}
-                entering={FadeInUp.delay(440 + i * 80).duration(400)}
                 style={styles.doctorCardWrap}
               >
                 <Pressable
@@ -406,7 +399,6 @@ export default function HomeScreen() {
 
         {/* HEALTH STATUS CARD */}
         <Animated.View
-          entering={FadeInUp.delay(560).duration(400)}
           style={styles.section}
         >
           <View
@@ -543,7 +535,6 @@ export default function HomeScreen() {
 
         {/* TIP OF THE DAY */}
         <Animated.View
-          entering={FadeInUp.delay(660).duration(400)}
           style={styles.section}
         >
           <View
