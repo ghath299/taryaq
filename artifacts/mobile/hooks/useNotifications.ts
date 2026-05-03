@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { updateUserFcmToken } from "@/lib/firebase-data";
+import { logger } from "@/lib/logger";
 
 const NOTIFS_KEY = "@taryaq_notifications";
 
@@ -94,7 +95,7 @@ export async function registerPushTokenForUser(phone: string): Promise<string | 
     await updateUserFcmToken(phone, token);
     return token;
   } catch (e) {
-    console.error("[Notifications] Failed to register push token:", e);
+    logger.error("[Notifications] Failed to register push token:", e);
     return null;
   }
 }

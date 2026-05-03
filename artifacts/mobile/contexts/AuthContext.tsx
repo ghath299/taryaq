@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
 import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
 import { saveTokens, clearTokens, getStoredTokens, getValidAccessToken } from "@/lib/auth-tokens";
+import { logger } from "@/lib/logger";
 
 export type UserRole = "patient" | "doctor" | "pharmacist" | null;
 
@@ -83,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (error) {
-      console.error("Failed to load auth state:", error);
+      logger.error("Failed to load auth state:", error);
     } finally {
       setIsLoading(false);
     }
@@ -97,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       }
     } catch (error) {
-      console.error("Failed to save auth state:", error);
+      logger.error("Failed to save auth state:", error);
     }
   };
 
@@ -126,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else setOtpSentAt(Date.now());
       return { success: true };
     } catch (e) {
-      console.error("[AuthContext] sendOTP error:", e);
+      logger.error("[AuthContext] sendOTP error:", e);
       return { success: false, message: "خطأ في الاتصال بالخادم" };
     }
   };
@@ -163,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await sendOTP(pendingName, pendingPhone, "telegram", coords);
       } catch (e) {
-        console.error("[AuthContext] sendOTP failed:", e);
+        logger.error("[AuthContext] sendOTP failed:", e);
       }
       setAuthStep("otp");
     }, 50);
@@ -186,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return data.role || "patient";
       }
     } catch {
-      console.log("[AuthContext] Could not fetch role");
+      logger.log("[AuthContext] Could not fetch role");
     }
     return "patient";
   };
@@ -245,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return currentUser;
         });
       } catch (e) {
-        console.error("[AuthContext] Failed to save user to Firebase:", e);
+        logger.error("[AuthContext] Failed to save user to Firebase:", e);
         setUser((currentUser) => {
           if (currentUser) {
             const updatedUser = { ...currentUser, isVerified: true, role };
@@ -258,7 +259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthStep("complete");
       return { success: true };
     } catch (err) {
-      console.error("[AuthContext] verifyOTP error:", err);
+      logger.error("[AuthContext] verifyOTP error:", err);
       return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
     }
   };

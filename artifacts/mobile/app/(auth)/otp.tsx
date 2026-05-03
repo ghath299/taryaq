@@ -19,6 +19,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
+import { logger } from "@/lib/logger";
 
 const OTP_LENGTH = 6;
 
@@ -49,12 +50,12 @@ export default function OTPScreen() {
     if (Platform.OS === "web") return;
     let active = true;
     ScreenCapture.preventScreenCaptureAsync().catch((err) => {
-      console.warn("[OTP] preventScreenCapture failed:", err);
+      logger.warn("[OTP] preventScreenCapture failed:", err);
     });
     return () => {
       active = false;
       ScreenCapture.allowScreenCaptureAsync().catch((err) => {
-        if (active) console.warn("[OTP] allowScreenCapture failed:", err);
+        if (active) logger.warn("[OTP] allowScreenCapture failed:", err);
       });
     };
   }, []);

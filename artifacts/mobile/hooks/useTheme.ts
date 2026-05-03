@@ -1,4 +1,5 @@
 import { Colors } from "@/constants/colors";
+import { logger } from "@/lib/logger";
 import React, {
   createContext,
   useContext,
@@ -44,7 +45,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setThemeModeState(savedTheme as ThemeMode);
       }
     } catch (error) {
-      console.error("Failed to load theme:", error);
+      logger.error("Failed to load theme:", error);
     }
   };
 
