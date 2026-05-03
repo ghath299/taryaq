@@ -201,14 +201,18 @@ export default function MedicineSearchMapScreen() {
 
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: subtleBorder }]}>
-        <Pressable
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="رجوع"
-          style={styles.headerBtn}
-        >
-          <Feather name="arrow-right" size={22} color={theme.text} />
-        </Pressable>
+        {router.canGoBack() ? (
+          <Pressable
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="رجوع"
+            style={styles.headerBtn}
+          >
+            <Feather name="arrow-right" size={22} color={theme.text} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerBtn} />
+        )}
         <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800" }}>
           البحث عن علاج
         </ThemedText>

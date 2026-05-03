@@ -73,8 +73,7 @@ export default function TabLayout() {
         name="medicines"
         options={{
           title: "العلاجات والصيدليات",
-          headerTitle: "العلاجات والصيدليات",
-          headerTitleAlign: "right",
+          headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="package" size={22} color={color} />,
         }}
       />
