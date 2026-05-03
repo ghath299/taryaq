@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Platform, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, Platform, Alert, Linking } from "react-native";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,19 +21,35 @@ export default function LocationScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
+  const showDeniedAlert = (canAskAgain: boolean) => {
+    Alert.alert(
+      "إذن الموقع مطلوب",
+      canAskAgain
+        ? "يحتاج تطبيق ترياق إلى موقعك للعثور على أقرب الأطباء والصيدليات. لا يمكن المتابعة بدون السماح بالوصول."
+        : "تم رفض إذن الموقع. يرجى تفعيله من إعدادات الجهاز للمتابعة.",
+      canAskAgain
+        ? [{ text: "إعادة المحاولة", onPress: () => void handleGrantLocation() }]
+        : [
+            { text: "إلغاء", style: "cancel" },
+            { text: "فتح الإعدادات", onPress: () => void Linking.openSettings() },
+          ],
+      { cancelable: false },
+    );
+  };
+
   const handleGrantLocation = async () => {
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       if (Platform.OS === "web") {
+        // المتصفّح يطلب الإذن تلقائياً عبر Geolocation API
         await setLocationGranted(undefined);
         router.replace("/(auth)/otp");
         return;
       }
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        await setLocationGranted(undefined);
-        router.replace("/(auth)/otp");
+        showDeniedAlert(canAskAgain);
         return;
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -41,17 +57,16 @@ export default function LocationScreen() {
       const province = getClosestGovernorateFromCoords(latitude, longitude);
       await setLocationGranted({ lat: latitude, lng: longitude, province });
       router.replace("/(auth)/otp");
-    } catch (err) {
-      await setLocationGranted(undefined);
-      router.replace("/(auth)/otp");
+    } catch {
+      Alert.alert(
+        "تعذّر تحديد الموقع",
+        "حدث خطأ أثناء قراءة موقعك. يرجى التأكد من تفعيل خدمة الموقع والمحاولة مرة أخرى.",
+        [{ text: "إعادة المحاولة", onPress: () => void handleGrantLocation() }],
+        { cancelable: false },
+      );
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSkip = async () => {
-    await setLocationGranted(undefined);
-    router.replace("/(auth)/otp");
   };
 
   const features = [
@@ -103,9 +118,6 @@ export default function LocationScreen() {
           <Button onPress={handleGrantLocation} disabled={isLoading} style={styles.mainBtn}>
             {isLoading ? "جاري التحديد..." : "السماح بالوصول للموقع"}
           </Button>
-          <Button variant="secondary" onPress={handleSkip} style={styles.skipBtn}>
-            تخطي الآن
-          </Button>
         </Animated.View>
       </ScrollView>
     </SafeAreaView>
@@ -131,5 +143,4 @@ const styles = StyleSheet.create({
   featureText: { flex: 1 },
   buttonSection: { width: "100%", gap: Spacing.md },
   mainBtn: {},
-  skipBtn: {},
 });
