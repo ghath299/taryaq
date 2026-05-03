@@ -170,6 +170,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web") {
         // على الويب — Firebase SMS مباشرة
         const internationalPhone = "+964" + phoneNumber.slice(1);
+
+        // نظف الـ reCAPTCHA القديم قبل إنشاء واحد جديد
+        const container = document.getElementById("recaptcha-container");
+        if (container) container.innerHTML = "";
+
         const recaptchaVerifier = new RecaptchaVerifierClass(
           firebaseAuth,
           "recaptcha-container",
