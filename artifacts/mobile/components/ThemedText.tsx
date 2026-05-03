@@ -41,9 +41,9 @@ export function ThemedText({
 
   const getFontFamily = () => {
     const weight = getTypeStyle().fontWeight;
-    if (weight === "700") return "Tajawal_700Bold";
-    if (weight === "600" || weight === "500") return "Tajawal_500Medium";
-    return "Tajawal_400Regular";
+    if (weight === "700") return "System";
+    if (weight === "600" || weight === "500") return "System";
+    return "System";
   };
 
   return (

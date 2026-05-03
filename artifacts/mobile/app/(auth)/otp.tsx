@@ -238,7 +238,7 @@ export default function OTPScreen() {
                           ? theme.primary
                           : theme.border,
                       color: theme.text,
-                      fontFamily: "Tajawal_700Bold",
+                      fontFamily: "System",
                     },
                   ]}
                   textAlign="center"

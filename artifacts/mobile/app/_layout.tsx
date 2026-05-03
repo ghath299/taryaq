@@ -1,14 +1,6 @@
-import {
-  Tajawal_400Regular,
-  Tajawal_500Medium,
-  Tajawal_700Bold,
-  Tajawal_800ExtraBold,
-  useFonts,
-} from "@expo-google-fonts/tajawal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -21,42 +13,6 @@ import { AppProvider } from "@/contexts/AppContext";
 import { useNotificationSetup } from "@/hooks/useNotifications";
 
 setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
-
-// كتم أي خطأ متبقٍ من fontfaceobserver/تحميل الخطوط على الويب
-if (Platform.OS === "web" && typeof window !== "undefined") {
-  const isFontTimeout = (msg: string) =>
-    msg.includes("ms timeout exceeded") ||
-    msg.toLowerCase().includes("fontfaceobserver");
-
-  window.addEventListener(
-    "unhandledrejection",
-    (event) => {
-      const msg = String(event.reason?.message ?? event.reason ?? "");
-      if (isFontTimeout(msg)) event.preventDefault();
-    },
-    true,
-  );
-  window.addEventListener(
-    "error",
-    (event) => {
-      const msg = String(event.message ?? event.error?.message ?? "");
-      if (isFontTimeout(msg)) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    },
-    true,
-  );
-  // كتم console.error لنفس السبب حتى لا يلتقطه LogBox
-  const origErr = console.error.bind(console);
-  console.error = (...args: unknown[]) => {
-    const text = args.map((a) => String((a as { message?: string })?.message ?? a)).join(" ");
-    if (isFontTimeout(text)) return;
-    origErr(...args);
-  };
-}
-
-SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -114,10 +70,7 @@ function RootLayoutNav() {
           headerBackTitle: "رجوع",
         }}
       />
-      <Stack.Screen
-        name="search"
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="search" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile"
         options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }}
@@ -140,27 +93,6 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  // على الويب: لا نحمّل خطوط Google لأن الـ proxy قد يحجبها → يسبب fontfaceobserver timeout.
-  // المتصفّحات تعرض العربي بشكل ممتاز عبر خطوط النظام افتراضياً.
-  const [fontsLoaded, fontError] = useFonts(
-    Platform.OS === "web"
-      ? {}
-      : {
-          Tajawal_400Regular,
-          Tajawal_500Medium,
-          Tajawal_700Bold,
-          Tajawal_800ExtraBold,
-        },
-  );
-
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) return null;
-
   return (
     <SafeAreaProvider>
       <ErrorBoundary>

@@ -73,7 +73,7 @@ export function GlowingSearchBar({ value, onChangeText, placeholder, autoFocus }
             styles.input,
             {
               color: theme.text,
-              fontFamily: "Tajawal_400Regular",
+              fontFamily: "System",
             },
           ]}
           textAlign="right"

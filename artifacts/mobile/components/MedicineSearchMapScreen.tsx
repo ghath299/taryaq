@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontFamily: "Tajawal_500Medium",
+    fontFamily: "System",
     fontSize: 14,
   },
 
