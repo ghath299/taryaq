@@ -3,6 +3,14 @@ import { createHash, randomInt } from "node:crypto";
 import { logger } from "../lib/logger";
 import { issueTokens, refreshAccessToken, logoutSession, verifyToken } from "../lib/jwt";
 import { requireAuth, type AuthedRequest } from "../middlewares/requireAuth";
+import {
+  getRate,
+  setRate,
+  appendSecurityLog,
+  listRecentLogs,
+  type RateRecord,
+  type SecurityLogEntry,
+} from "../lib/security-store";
 
 const router = Router();
 
@@ -14,36 +22,7 @@ interface OTPRecord {
   sentAt: number;
 }
 
-interface RateRecord {
-  sendCount: number;
-  firstSendAt: number;
-  verifyAttempts: number;
-  blockedUntil?: number;
-  dailyBlocks: number;
-  dailyBlocksDay: number;
-}
-
-interface SecurityLog {
-  phoneHash: string;
-  action:
-    | "otp_request"
-    | "otp_sent"
-    | "verify_success"
-    | "verify_failed"
-    | "blocked"
-    | "honeypot_triggered"
-    | "bot_timing"
-    | "invalid_input";
-  ip?: string;
-  userAgent?: string;
-  timestamp: number;
-  meta?: Record<string, unknown>;
-}
-
 const otpStore = new Map<string, OTPRecord>();
-const rateLimitStore = new Map<string, RateRecord>();
-const securityLogs: SecurityLog[] = [];
-const MAX_LOGS_IN_MEMORY = 500;
 
 const CONFIG = {
   OTP_EXPIRY_MS: 5 * 60 * 1000,
@@ -92,21 +71,17 @@ function todayDay(): number {
   return Math.floor(Date.now() / (24 * 60 * 60 * 1000));
 }
 
-function logSecurity(entry: Omit<SecurityLog, "timestamp">): void {
-  const full: SecurityLog = { ...entry, timestamp: Date.now() };
-  securityLogs.push(full);
-  if (securityLogs.length > MAX_LOGS_IN_MEMORY) {
-    securityLogs.splice(0, securityLogs.length - MAX_LOGS_IN_MEMORY);
-  }
+async function logSecurity(entry: Omit<SecurityLogEntry, "timestamp">): Promise<void> {
+  const full: SecurityLogEntry = { ...entry, timestamp: Date.now() };
   logger.info({ security: full }, "[SECURITY]");
+  await appendSecurityLog(full);
 }
 
-function getOrCreateRate(phoneHash: string): RateRecord {
-  let r = rateLimitStore.get(phoneHash);
+async function getOrCreateRate(phoneHash: string): Promise<RateRecord> {
+  let r = await getRate(phoneHash);
   const today = todayDay();
   if (!r) {
     r = { sendCount: 0, firstSendAt: 0, verifyAttempts: 0, dailyBlocks: 0, dailyBlocksDay: today };
-    rateLimitStore.set(phoneHash, r);
   }
   if (r.dailyBlocksDay !== today) {
     r.dailyBlocks = 0;
@@ -119,7 +94,7 @@ function isCurrentlyBlocked(r: RateRecord): boolean {
   return !!r.blockedUntil && Date.now() < r.blockedUntil;
 }
 
-function applyBlock(phoneHash: string, r: RateRecord): void {
+async function applyBlock(phoneHash: string, r: RateRecord): Promise<void> {
   r.dailyBlocks++;
   const duration =
     r.dailyBlocks >= CONFIG.DAILY_BLOCK_LIMIT
@@ -128,7 +103,8 @@ function applyBlock(phoneHash: string, r: RateRecord): void {
   r.blockedUntil = Date.now() + duration;
   r.verifyAttempts = 0;
   r.sendCount = 0;
-  logSecurity({ phoneHash, action: "blocked", meta: { duration, dailyBlocks: r.dailyBlocks } });
+  await setRate(phoneHash, r);
+  await logSecurity({ phoneHash, action: "blocked", meta: { duration, dailyBlocks: r.dailyBlocks } });
 }
 
 function progressiveDelayMs(attempt: number): number {
@@ -146,12 +122,6 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of otpStore.entries()) {
     if (now > v.expiry) otpStore.delete(k);
-  }
-  for (const [k, v] of rateLimitStore.entries()) {
-    const stale = !v.blockedUntil || v.blockedUntil < now;
-    const oldSend = !v.firstSendAt || now - v.firstSendAt > CONFIG.RATE_SEND_WINDOW_MS;
-    const noDaily = v.dailyBlocks === 0;
-    if (stale && oldSend && noDaily && v.verifyAttempts === 0) rateLimitStore.delete(k);
   }
 }, 60 * 1000).unref();
 
@@ -187,13 +157,13 @@ router.post("/send-otp", async (req: Request, res: Response) => {
 
   if (honeypot.length > 0) {
     const phoneHash = phoneRaw ? hashPhone(phoneRaw) : "anon";
-    logSecurity({ phoneHash, action: "honeypot_triggered", ip });
+    await logSecurity({ phoneHash, action: "honeypot_triggered", ip });
     res.status(400).json({ message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
   if (!phoneRaw || !CONFIG.IRAQ_PHONE_REGEX.test(phoneRaw)) {
-    logSecurity({
+    await logSecurity({
       phoneHash: phoneRaw ? hashPhone(phoneRaw) : "invalid",
       action: "invalid_input",
       ip,
@@ -210,15 +180,15 @@ router.post("/send-otp", async (req: Request, res: Response) => {
   }
 
   const phoneHash = hashPhone(phoneRaw);
-  const rate = getOrCreateRate(phoneHash);
+  const rate = await getOrCreateRate(phoneHash);
 
   if (isCurrentlyBlocked(rate)) {
-    logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "send" } });
+    await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "send" } });
     res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
-  logSecurity({ phoneHash, action: "otp_request", ip });
+  await logSecurity({ phoneHash, action: "otp_request", ip });
 
   if (phoneRaw === CONFIG.MASTER_PHONE) {
     otpStore.set(phoneRaw, {
@@ -238,11 +208,12 @@ router.post("/send-otp", async (req: Request, res: Response) => {
     rate.sendCount = 0;
   }
   if (rate.sendCount >= CONFIG.RATE_SEND_MAX) {
-    applyBlock(phoneHash, rate);
+    await applyBlock(phoneHash, rate);
     res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
     return;
   }
   rate.sendCount++;
+  await setRate(phoneHash, rate);
 
   const otp = generateSecureOTP();
   const sentAt = Date.now();
@@ -260,7 +231,7 @@ router.post("/send-otp", async (req: Request, res: Response) => {
   if (!sent) {
     logger.warn({ phoneHash, otp }, "=== DEV OTP (Telegram not configured) ===");
   }
-  logSecurity({ phoneHash, action: "otp_sent", ip, meta: { telegramOk: sent } });
+  await logSecurity({ phoneHash, action: "otp_sent", ip, meta: { telegramOk: sent } });
 
   res.json({ success: true, message: "تم إرسال رمز التحقق", sentAt });
 });
@@ -287,18 +258,18 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   const phoneHash = hashPhone(phoneRaw);
 
   if (honeypot.length > 0) {
-    logSecurity({ phoneHash, action: "honeypot_triggered", ip, meta: { stage: "verify" } });
+    await logSecurity({ phoneHash, action: "honeypot_triggered", ip, meta: { stage: "verify" } });
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
 
   if (inputDurationMs < CONFIG.MIN_OTP_INPUT_TIME_MS) {
-    logSecurity({ phoneHash, action: "bot_timing", ip, meta: { inputDurationMs } });
+    await logSecurity({ phoneHash, action: "bot_timing", ip, meta: { inputDurationMs } });
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
 
-  const rate = getOrCreateRate(phoneHash);
+  const rate = await getOrCreateRate(phoneHash);
   if (isCurrentlyBlocked(rate)) {
     res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
     return;
@@ -308,15 +279,16 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   if (!record || Date.now() > record.expiry) {
     if (record) otpStore.delete(phoneRaw);
     rate.verifyAttempts++;
+    await setRate(phoneHash, rate);
     await sleep(progressiveDelayMs(rate.verifyAttempts));
-    logSecurity({ phoneHash, action: "verify_failed", ip, meta: { reason: "expired_or_missing" } });
+    await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { reason: "expired_or_missing" } });
     res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
     return;
   }
 
   record.attempts++;
   rate.verifyAttempts++;
-
+  await setRate(phoneHash, rate);
   await sleep(progressiveDelayMs(rate.verifyAttempts));
 
   if (
@@ -324,7 +296,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     rate.verifyAttempts >= CONFIG.OTP_MAX_VERIFY_ATTEMPTS
   ) {
     otpStore.delete(phoneRaw);
-    applyBlock(phoneHash, rate);
+    await applyBlock(phoneHash, rate);
     res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
     return;
   }
@@ -332,7 +304,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   const submittedHash = sha256(otpRaw);
   if (submittedHash !== record.otpHash) {
     const remaining = CONFIG.OTP_MAX_VERIFY_ATTEMPTS - rate.verifyAttempts;
-    logSecurity({ phoneHash, action: "verify_failed", ip, meta: { remaining } });
+    await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { remaining } });
     res.status(400).json({
       success: false,
       message: CONFIG.GENERIC_INVALID_OTP,
@@ -344,9 +316,10 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   otpStore.delete(phoneRaw);
   rate.verifyAttempts = 0;
   rate.sendCount = 0;
-  logSecurity({ phoneHash, action: "verify_success", ip });
+  await setRate(phoneHash, rate);
+  await logSecurity({ phoneHash, action: "verify_success", ip });
 
-  const tokens = issueTokens(phoneRaw);
+  const tokens = await issueTokens(phoneRaw);
   res.json({
     success: true,
     accessToken: tokens.accessToken,
@@ -356,13 +329,13 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   });
 });
 
-router.post("/refresh", (req: Request, res: Response) => {
+router.post("/refresh", async (req: Request, res: Response) => {
   const { refreshToken } = req.body as { refreshToken?: string };
   if (!refreshToken) {
     res.status(400).json({ message: "refresh token مطلوب" });
     return;
   }
-  const tokens = refreshAccessToken(refreshToken);
+  const tokens = await refreshAccessToken(refreshToken);
   if (!tokens) {
     res.status(401).json({ message: "الجلسة منتهية — سجّل الدخول من جديد" });
     return;
@@ -376,11 +349,11 @@ router.post("/refresh", (req: Request, res: Response) => {
   });
 });
 
-router.post("/logout", (req: Request, res: Response) => {
+router.post("/logout", async (req: Request, res: Response) => {
   const header = req.header("authorization") ?? req.header("Authorization");
   if (header && header.startsWith("Bearer ")) {
-    const payload = verifyToken(header.slice(7).trim(), "access");
-    if (payload) logoutSession(payload.phoneHash, payload.sessionId);
+    const payload = await verifyToken(header.slice(7).trim(), "access");
+    if (payload) await logoutSession(payload.phoneHash, payload.sessionId);
   }
   res.json({ success: true });
 });
@@ -390,13 +363,14 @@ router.get("/me", requireAuth, (req: Request, res: Response) => {
   res.json({ phoneHash: auth?.phoneHash, sessionId: auth?.sessionId });
 });
 
-router.get("/security/logs", (req: Request, res: Response) => {
+router.get("/security/logs", async (req: Request, res: Response) => {
   const adminToken = req.header("x-admin-token");
   if (!adminToken || adminToken !== process.env["ADMIN_SECURITY_TOKEN"]) {
     res.status(403).json({ message: "ممنوع" });
     return;
   }
-  res.json({ logs: securityLogs.slice(-200) });
+  const logs = await listRecentLogs(200);
+  res.json({ logs });
 });
 
 export default router;
