@@ -1,3 +1,18 @@
+if (typeof window !== "undefined") {
+  const originalError = window.onerror;
+  window.onerror = (msg, ...rest) => {
+    if (String(msg).includes("timeout exceeded")) return true;
+    return (originalError as ((m: unknown, ...r: unknown[]) => boolean) | null)?.(msg, ...rest) ?? false;
+  };
+  window.addEventListener(
+    "unhandledrejection",
+    (e) => {
+      if (String((e as PromiseRejectionEvent).reason).includes("timeout exceeded")) e.preventDefault();
+    },
+    true,
+  );
+}
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import React from "react";
