@@ -38,10 +38,11 @@ interface AuthContextType {
   setUser: (user: AuthUser | null) => void;
   setAuthStep: (step: "login" | "location" | "otp" | "complete") => void;
   setPendingPhone: (phone: string) => void;
-  login: (fullName: string, phoneNumber: string) => Promise<void>;
-  verifyOTP: (code: string) => Promise<OTPResult>;
+  login: (fullName: string, phoneNumber: string, honeypot?: string) => Promise<void>;
+  verifyOTP: (code: string, inputDurationMs?: number) => Promise<OTPResult>;
   resendOTP: (channel?: string) => Promise<OTPResult>;
   sendOTPAndProceed: (channel: string) => Promise<OTPResult>;
+  otpSentAt: number;
   setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -55,7 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete">("login");
   const [pendingPhone, setPendingPhone] = useState("");
   const [pendingName, setPendingName] = useState("");
+  const [pendingHoneypot, setPendingHoneypot] = useState("");
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number; province: string } | undefined>();
+  const [otpSentAt, setOtpSentAt] = useState(0);
 
   useEffect(() => {
     loadAuthState();
@@ -101,9 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${apiUrl}/api/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, fullName, channel, location }),
+        body: JSON.stringify({ phoneNumber, fullName, channel, location, honeypot: pendingHoneypot }),
       });
-      const data = await res.json() as { message?: string; success?: boolean };
+      const data = await res.json() as { message?: string; success?: boolean; sentAt?: number };
       if (!res.ok) {
         return {
           success: false,
@@ -111,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           blocked: res.status === 429,
         };
       }
+      if (data.sentAt) setOtpSentAt(data.sentAt);
+      else setOtpSentAt(Date.now());
       return { success: true };
     } catch (e) {
       console.error("[AuthContext] sendOTP error:", e);
@@ -118,12 +123,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (fullName: string, phoneNumber: string) => {
-    setPendingPhone(phoneNumber);
-    setPendingName(fullName);
+  const login = async (fullName: string, phoneNumber: string, honeypot: string = "") => {
+    const cleanPhone = phoneNumber.replace(/\D/g, "").slice(0, 11);
+    const cleanName = fullName.replace(/[<>"'`;{}()$\\]/g, "").replace(/\s+/g, " ").trim().slice(0, 50);
+    setPendingPhone(cleanPhone);
+    setPendingName(cleanName);
+    setPendingHoneypot(honeypot);
     const newUser: AuthUser = {
-      fullName,
-      phoneNumber,
+      fullName: cleanName,
+      phoneNumber: cleanPhone,
       role: null,
       locationGranted: false,
       isVerified: false,
@@ -175,8 +183,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return "patient";
   };
 
-  const verifyOTP = async (code: string): Promise<OTPResult> => {
-    if (code.length !== 6) {
+  const verifyOTP = async (code: string, inputDurationMs: number = 9999): Promise<OTPResult> => {
+    const cleanCode = code.replace(/\D/g, "");
+    if (cleanCode.length !== 6) {
       return { success: false, message: "الرمز يجب أن يكون 6 أرقام" };
     }
     try {
@@ -185,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${apiUrl}/api/auth/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber, otp: code }),
+        body: JSON.stringify({ phoneNumber, otp: cleanCode, inputDurationMs, honeypot: pendingHoneypot }),
       });
       const data = await res.json() as { success?: boolean; message?: string; attemptsRemaining?: number };
       if (!res.ok || !data.success) {
@@ -242,7 +251,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStep("login");
     setPendingPhone("");
     setPendingName("");
+    setPendingHoneypot("");
     setPendingLocation(undefined);
+    setOtpSentAt(0);
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
@@ -269,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sendOTPAndProceed,
         setLocationGranted,
         logout,
+        otpSentAt,
       }}
     >
       {children}

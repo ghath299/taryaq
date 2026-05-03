@@ -28,6 +28,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [website, setWebsite] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({ name: "", phone: "" });
   const phoneRef = useRef<TextInput>(null);
@@ -51,7 +52,7 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      await login(fullName.trim(), phoneNumber.trim());
+      await login(fullName.trim(), phoneNumber.trim(), website);
       router.replace("/(auth)/location");
     } catch (e) {
       Alert.alert("خطأ", "حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى.");
@@ -192,6 +193,18 @@ export default function LoginScreen() {
               </ThemedText>
             ) : null}
           </View>
+
+          <TextInput
+            value={website}
+            onChangeText={setWebsite}
+            autoComplete="off"
+            autoCorrect={false}
+            importantForAutofill="no"
+            accessible={false}
+            accessibilityElementsHidden
+            style={styles.honeypot}
+            pointerEvents="none"
+          />
 
           <Pressable
             onPress={handleSubmit}
@@ -344,5 +357,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12,
     lineHeight: 18,
+  },
+  honeypot: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
+    left: -9999,
+    top: -9999,
   },
 });

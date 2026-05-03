@@ -24,7 +24,7 @@ const OTP_LENGTH = 6;
 export default function OTPScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
-  const { user, pendingPhone, verifyOTP, resendOTP } = useAuth();
+  const { user, pendingPhone, verifyOTP, resendOTP, otpSentAt } = useAuth();
   const router = useRouter();
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(""));
   const [isLoading, setIsLoading] = useState(false);
@@ -95,7 +95,8 @@ export default function OTPScreen() {
     }
     setIsLoading(true);
     setErrorMsg("");
-    const result = await verifyOTP(code);
+    const inputDurationMs = otpSentAt > 0 ? Date.now() - otpSentAt : 9999;
+    const result = await verifyOTP(code, inputDurationMs);
     setIsLoading(false);
     if (result.success) {
       router.replace("/(tabs)");

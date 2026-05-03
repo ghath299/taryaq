@@ -1,0 +1,39 @@
+{
+  "rules": {
+    "users": {
+      "$userId": {
+        ".read": "$userId === auth.uid",
+        ".write": "$userId === auth.uid"
+      }
+    },
+    "clinics": {
+      ".read": "auth !== null",
+      "$clinicId": {
+        ".read": "auth !== null",
+        ".write": "auth !== null && root.child('clinics').child($clinicId).child('authorizedUsers').child(auth.uid).exists()",
+        "bookings": {
+          ".read": "auth !== null",
+          ".write": "auth !== null"
+        },
+        "payment": {
+          ".read": "auth !== null",
+          ".write": "auth !== null && root.child('clinics').child($clinicId).child('authorizedUsers').child(auth.uid).exists()"
+        }
+      }
+    },
+    "transactions": {
+      ".read": "auth !== null",
+      "$txId": {
+        ".write": "auth !== null"
+      }
+    },
+    "security": {
+      ".read": false,
+      ".write": false
+    },
+    "platform": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
