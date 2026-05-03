@@ -1,13 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomInt } from "node:crypto";
-import { getAuth } from "firebase-admin/auth";
 import { logger } from "../lib/logger";
-import {
-  issueTokens,
-  refreshAccessToken,
-  logoutSession,
-  verifyToken,
-} from "../lib/jwt";
+import { issueTokens, refreshAccessToken, logoutSession, verifyToken } from "../lib/jwt";
 import { requireAuth, type AuthedRequest } from "../middlewares/requireAuth";
 import {
   mutateRate,
@@ -18,13 +12,9 @@ import {
   deleteOtp,
   updateOtpAttempts,
   sweepExpiredOtps,
-  setPendingRegistration,
-  getPendingRegistration,
-  deletePendingRegistration,
   type RateRecord,
   type SecurityLogEntry,
 } from "../lib/security-store";
-import { fbAuth } from "../lib/firebase-admin";
 
 const router = Router();
 
@@ -70,9 +60,7 @@ function todayDay(): number {
   return Math.floor(Date.now() / (24 * 60 * 60 * 1000));
 }
 
-async function logSecurity(
-  entry: Omit<SecurityLogEntry, "timestamp">,
-): Promise<void> {
+async function logSecurity(entry: Omit<SecurityLogEntry, "timestamp">): Promise<void> {
   const full: SecurityLogEntry = { ...entry, timestamp: Date.now() };
   logger.info({ security: full }, "[SECURITY]");
   await appendSecurityLog(full);
@@ -103,6 +91,23 @@ setInterval(() => {
   void sweepExpiredOtps();
 }, 60 * 1000).unref();
 
+async function sendViaTelegram(chatId: string, text: string): Promise<boolean> {
+  const token = process.env["TELEGRAM_BOT_TOKEN"];
+  if (!token) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    const data = (await res.json()) as { ok: boolean };
+    return data.ok === true;
+  } catch (err) {
+    logger.error({ err }, "Telegram send failed");
+    return false;
+  }
+}
+
 /* ----- Atomic rate-limit consumers (transaction-based) ----- */
 
 interface SendDecision {
@@ -112,11 +117,7 @@ interface SendDecision {
 }
 
 async function tryConsumeSend(phoneHash: string): Promise<SendDecision> {
-  const decision: SendDecision = {
-    ok: false,
-    blocked: false,
-    newlyBlocked: false,
-  };
+  const decision: SendDecision = { ok: false, blocked: false, newlyBlocked: false };
   await mutateRate(phoneHash, (cur) => {
     const today = todayDay();
     const r: RateRecord = cur ? { ...cur } : freshRate();
@@ -130,10 +131,7 @@ async function tryConsumeSend(phoneHash: string): Promise<SendDecision> {
     } else if (r.blockedUntil) {
       delete r.blockedUntil;
     }
-    if (
-      !r.firstSendAt ||
-      Date.now() - r.firstSendAt > CONFIG.RATE_SEND_WINDOW_MS
-    ) {
+    if (!r.firstSendAt || Date.now() - r.firstSendAt > CONFIG.RATE_SEND_WINDOW_MS) {
       r.firstSendAt = Date.now();
       r.sendCount = 0;
     }
@@ -164,11 +162,7 @@ interface VerifyDecision {
 }
 
 async function tryConsumeVerify(phoneHash: string): Promise<VerifyDecision> {
-  const decision: VerifyDecision = {
-    blocked: false,
-    newlyBlocked: false,
-    verifyAttempts: 0,
-  };
+  const decision: VerifyDecision = { blocked: false, newlyBlocked: false, verifyAttempts: 0 };
   await mutateRate(phoneHash, (cur) => {
     const today = todayDay();
     const r: RateRecord = cur ? { ...cur } : freshRate();
@@ -211,19 +205,16 @@ async function resetRateOnSuccess(phoneHash: string): Promise<void> {
 
 /* ---------------------------- Routes ---------------------------- */
 
-// تسجيل البيانات قبل إرسال OTP من Firebase
-router.post("/register-pending", async (req: Request, res: Response) => {
+router.post("/send-otp", async (req: Request, res: Response) => {
   const body = req.body as {
     phoneNumber?: string;
     fullName?: string;
-    location?: { lat: number; lng: number; province: string };
+    channel?: string;
     honeypot?: string;
   };
 
-  const phoneRaw =
-    typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
-  const nameRaw =
-    typeof body.fullName === "string" ? sanitizeName(body.fullName) : "";
+  const phoneRaw = typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
+  const nameRaw = typeof body.fullName === "string" ? sanitizeName(body.fullName) : "";
   const honeypot = typeof body.honeypot === "string" ? body.honeypot : "";
   const ip = req.ip ?? "unknown";
 
@@ -252,139 +243,127 @@ router.post("/register-pending", async (req: Request, res: Response) => {
   }
 
   const phoneHash = hashPhone(phoneRaw);
+  await logSecurity({ phoneHash, action: "otp_request", ip });
+
+  if (phoneRaw === CONFIG.MASTER_PHONE) {
+    await setOtp(phoneRaw, {
+      otpHash: sha256(CONFIG.MASTER_OTP),
+      expiry: Date.now() + CONFIG.OTP_EXPIRY_MS,
+      attempts: 0,
+      fullName: nameRaw,
+      sentAt: Date.now(),
+    });
+    logger.info({ phoneHash }, "Master phone — fixed OTP");
+    res.json({ success: true, message: "تم إرسال رمز التحقق", sentAt: Date.now() });
+    return;
+  }
+
   const dec = await tryConsumeSend(phoneHash);
   if (dec.blocked) {
-    if (dec.newlyBlocked)
-      await logSecurity({
-        phoneHash,
-        action: "blocked",
-        ip,
-        meta: { stage: "send" },
-      });
+    if (dec.newlyBlocked) await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "send" } });
     res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
-  // نحفظ الاسم مؤقتاً
+  const otp = generateSecureOTP();
+  const sentAt = Date.now();
   await setOtp(phoneRaw, {
-    otpHash: sha256("firebase-handled"),
-    expiry: Date.now() + CONFIG.OTP_EXPIRY_MS,
+    otpHash: sha256(otp),
+    expiry: sentAt + CONFIG.OTP_EXPIRY_MS,
     attempts: 0,
     fullName: nameRaw,
-    sentAt: Date.now(),
+    sentAt,
   });
 
-  await logSecurity({
-    phoneHash,
-    action: "otp_request",
-    ip,
-    meta: { channel: "firebase_sms" },
-  });
-  res.json({
-    success: true,
-    message: "تم إرسال رمز التحقق",
-    sentAt: Date.now(),
-  });
+  const message = `🔐 <b>ترياق — رمز التحقق</b>\n\nرمز التحقق الخاص بك:\n\n<code>${otp}</code>\n\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`;
+  const sent = await sendViaTelegram(phoneRaw, message);
+  if (!sent) logger.warn({ phoneHash, otp }, "=== DEV OTP (Telegram not configured) ===");
+  await logSecurity({ phoneHash, action: "otp_sent", ip, meta: { telegramOk: sent } });
+
+  res.json({ success: true, message: "تم إرسال رمز التحقق", sentAt });
 });
 
-// التحقق من Firebase ID Token وإصدار JWT
-router.post("/verify-firebase-token", async (req: Request, res: Response) => {
+router.post("/verify-otp", async (req: Request, res: Response) => {
   const body = req.body as {
-    idToken?: string;
     phoneNumber?: string;
+    otp?: string;
     inputDurationMs?: number;
     honeypot?: string;
   };
 
-  const idToken = typeof body.idToken === "string" ? body.idToken : "";
-  const phoneRaw =
-    typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
-  const inputDurationMs =
-    typeof body.inputDurationMs === "number" ? body.inputDurationMs : 9999;
+  const phoneRaw = typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
+  const otpRaw = typeof body.otp === "string" ? body.otp.replace(/\D/g, "").slice(0, 6) : "";
+  const inputDurationMs = typeof body.inputDurationMs === "number" ? body.inputDurationMs : 9999;
   const honeypot = typeof body.honeypot === "string" ? body.honeypot : "";
   const ip = req.ip ?? "unknown";
 
-  if (honeypot.length > 0) {
-    res.status(400).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
-    return;
-  }
-  if (inputDurationMs < CONFIG.MIN_OTP_INPUT_TIME_MS) {
-    res
-      .status(400)
-      .json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
-    return;
-  }
-  if (!idToken || !phoneRaw) {
+  if (!phoneRaw || !otpRaw) {
     res.status(400).json({ success: false, message: "بيانات غير مكتملة" });
     return;
   }
 
   const phoneHash = hashPhone(phoneRaw);
+
+  if (honeypot.length > 0) {
+    await logSecurity({ phoneHash, action: "honeypot_triggered", ip, meta: { stage: "verify" } });
+    res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
+    return;
+  }
+  if (inputDurationMs < CONFIG.MIN_OTP_INPUT_TIME_MS) {
+    await logSecurity({ phoneHash, action: "bot_timing", ip, meta: { inputDurationMs } });
+    res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
+    return;
+  }
+
   const dec = await tryConsumeVerify(phoneHash);
   await sleep(progressiveDelayMs(dec.verifyAttempts));
-
   if (dec.blocked) {
     if (dec.newlyBlocked) {
       await deleteOtp(phoneRaw);
-      await logSecurity({
-        phoneHash,
-        action: "blocked",
-        ip,
-        meta: { stage: "verify" },
-      });
+      await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "verify" } });
     }
     res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
     return;
   }
 
-  try {
-    // تحقق من Firebase ID Token
-    const decoded = await getAuth().verifyIdToken(idToken);
-
-    // تأكد إن الرقم يطابق
-    const firebasePhone = decoded.phone_number?.replace("+964", "0") ?? "";
-    if (firebasePhone !== phoneRaw) {
-      await logSecurity({
-        phoneHash,
-        action: "verify_failed",
-        ip,
-        meta: { reason: "phone_mismatch" },
-      });
-      res
-        .status(400)
-        .json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
-      return;
-    }
-
-    await resetRateOnSuccess(phoneHash);
-    await deleteOtp(phoneRaw);
-    await logSecurity({
-      phoneHash,
-      action: "verify_success",
-      ip,
-      meta: { channel: "firebase_sms" },
-    });
-
-    const tokens = await issueTokens(phoneRaw);
-    res.json({
-      success: true,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      accessExpiresAt: tokens.accessExpiresAt,
-      refreshExpiresAt: tokens.refreshExpiresAt,
-    });
-  } catch (e) {
-    logger.error({ e }, "Firebase token verification failed");
-    await logSecurity({
-      phoneHash,
-      action: "verify_failed",
-      ip,
-      meta: { reason: "invalid_firebase_token" },
-    });
-    res
-      .status(400)
-      .json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
+  const record = await getOtp(phoneRaw);
+  if (!record) {
+    await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { reason: "expired_or_missing" } });
+    res.status(400).json({ success: false, message: CONFIG.GENERIC_INVALID_OTP });
+    return;
   }
+
+  const newAttempts = record.attempts + 1;
+  await updateOtpAttempts(phoneRaw, newAttempts);
+  if (newAttempts > CONFIG.OTP_MAX_VERIFY_ATTEMPTS) {
+    await deleteOtp(phoneRaw);
+    res.status(429).json({ success: false, message: CONFIG.GENERIC_BLOCKED });
+    return;
+  }
+
+  if (sha256(otpRaw) !== record.otpHash) {
+    const remaining = CONFIG.OTP_MAX_VERIFY_ATTEMPTS - dec.verifyAttempts;
+    await logSecurity({ phoneHash, action: "verify_failed", ip, meta: { remaining } });
+    res.status(400).json({
+      success: false,
+      message: CONFIG.GENERIC_INVALID_OTP,
+      attemptsRemaining: Math.max(0, remaining),
+    });
+    return;
+  }
+
+  await deleteOtp(phoneRaw);
+  await resetRateOnSuccess(phoneHash);
+  await logSecurity({ phoneHash, action: "verify_success", ip });
+
+  const tokens = await issueTokens(phoneRaw);
+  res.json({
+    success: true,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessExpiresAt: tokens.accessExpiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt,
+  });
 });
 
 router.post("/refresh", async (req: Request, res: Response) => {
@@ -429,141 +408,6 @@ router.get("/security/logs", async (req: Request, res: Response) => {
   }
   const logs = await listRecentLogs(200);
   res.json({ logs });
-});
-
-/* ------------------- Firebase Phone Auth integration ------------------- */
-
-router.post("/register-pending", async (req: Request, res: Response) => {
-  const body = req.body as {
-    phoneNumber?: string;
-    fullName?: string;
-    honeypot?: string;
-  };
-
-  const phoneRaw = typeof body.phoneNumber === "string" ? sanitizePhone(body.phoneNumber) : "";
-  const nameRaw = typeof body.fullName === "string" ? sanitizeName(body.fullName) : "";
-  const honeypot = typeof body.honeypot === "string" ? body.honeypot : "";
-  const ip = req.ip ?? "unknown";
-
-  if (honeypot.length > 0) {
-    await logSecurity({
-      phoneHash: phoneRaw ? hashPhone(phoneRaw) : "anon",
-      action: "honeypot_triggered",
-      ip,
-      meta: { stage: "register_pending" },
-    });
-    res.status(400).json({ message: CONFIG.GENERIC_BLOCKED });
-    return;
-  }
-
-  if (!phoneRaw || !CONFIG.IRAQ_PHONE_REGEX.test(phoneRaw)) {
-    await logSecurity({
-      phoneHash: phoneRaw ? hashPhone(phoneRaw) : "invalid",
-      action: "invalid_input",
-      ip,
-      meta: { stage: "register_pending", reason: "phone" },
-    });
-    res.status(400).json({ message: "رقم الهاتف العراقي غير صحيح" });
-    return;
-  }
-
-  const wordCount = nameRaw.split(/\s+/).filter((w) => w.length > 1).length;
-  if (!nameRaw || wordCount < CONFIG.NAME_MIN_WORDS) {
-    res.status(400).json({ message: "الاسم يجب أن يكون ثلاثياً على الأقل" });
-    return;
-  }
-
-  const phoneHash = hashPhone(phoneRaw);
-  const dec = await tryConsumeSend(phoneHash);
-  if (dec.blocked) {
-    if (dec.newlyBlocked) {
-      await logSecurity({ phoneHash, action: "blocked", ip, meta: { stage: "register_pending" } });
-    }
-    res.status(429).json({ message: CONFIG.GENERIC_BLOCKED });
-    return;
-  }
-
-  await setPendingRegistration(phoneHash, { fullName: nameRaw, createdAt: Date.now() });
-  await logSecurity({ phoneHash, action: "register_pending", ip });
-
-  res.json({
-    success: true,
-    message: "تم التسجيل المبدئي. أكمل التحقق عبر Firebase",
-    expiresInMs: 15 * 60 * 1000,
-  });
-});
-
-router.post("/verify-firebase-token", async (req: Request, res: Response) => {
-  const body = req.body as { idToken?: string };
-  const idToken = typeof body.idToken === "string" ? body.idToken.trim() : "";
-  const ip = req.ip ?? "unknown";
-
-  if (!idToken) {
-    res.status(400).json({ success: false, message: "idToken مطلوب" });
-    return;
-  }
-
-  const auth = fbAuth();
-  if (!auth) {
-    logger.error("[verify-firebase-token] Firebase Admin not initialized");
-    res.status(503).json({ success: false, message: "خدمة المصادقة غير متاحة حالياً" });
-    return;
-  }
-
-  let decoded;
-  try {
-    decoded = await auth.verifyIdToken(idToken, true);
-  } catch (err) {
-    logger.warn({ err }, "[verify-firebase-token] verification failed");
-    await logSecurity({ phoneHash: "unknown", action: "fb_token_invalid", ip });
-    res.status(401).json({ success: false, message: "رمز Firebase غير صالح أو منتهي الصلاحية" });
-    return;
-  }
-
-  const phoneFromToken = decoded.phone_number;
-  if (!phoneFromToken) {
-    await logSecurity({ phoneHash: "unknown", action: "fb_token_no_phone", ip, meta: { uid: decoded.uid } });
-    res.status(400).json({ success: false, message: "الرمز لا يحتوي على رقم هاتف" });
-    return;
-  }
-
-  // تحويل صيغة E.164 (+9647xxxxxxxxx) إلى الصيغة المحلية (07xxxxxxxxx)
-  let phoneRaw = phoneFromToken.replace(/\D/g, "");
-  if (phoneRaw.startsWith("964")) phoneRaw = "0" + phoneRaw.slice(3);
-  phoneRaw = phoneRaw.slice(0, CONFIG.PHONE_MAX_LENGTH);
-
-  if (!CONFIG.IRAQ_PHONE_REGEX.test(phoneRaw)) {
-    await logSecurity({
-      phoneHash: hashPhone(phoneRaw),
-      action: "fb_phone_invalid",
-      ip,
-      meta: { original: phoneFromToken },
-    });
-    res.status(400).json({ success: false, message: "رقم الهاتف ليس عراقياً صالحاً" });
-    return;
-  }
-
-  const phoneHash = hashPhone(phoneRaw);
-  const pending = await getPendingRegistration(phoneHash);
-  if (pending) await deletePendingRegistration(phoneHash);
-  await resetRateOnSuccess(phoneHash);
-  await logSecurity({
-    phoneHash,
-    action: "fb_verify_success",
-    ip,
-    meta: { uid: decoded.uid, hasPending: !!pending },
-  });
-
-  const tokens = await issueTokens(phoneRaw);
-  res.json({
-    success: true,
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    accessExpiresAt: tokens.accessExpiresAt,
-    refreshExpiresAt: tokens.refreshExpiresAt,
-    fullName: pending?.fullName,
-    phoneNumber: phoneRaw,
-  });
 });
 
 export default router;

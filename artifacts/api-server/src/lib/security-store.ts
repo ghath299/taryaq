@@ -33,19 +33,11 @@ export interface PaymentAttemptRecord {
   firstAt: number;
 }
 
-export interface PendingRegistration {
-  fullName: string;
-  createdAt: number;
-}
-
 const memRate = new Map<string, RateRecord>();
 const memBlacklist = new Map<string, number>();
 const memSessions = new Map<string, string>();
 const memOtp = new Map<string, OtpRecord>();
 const memPay = new Map<string, PaymentAttemptRecord>();
-const memPending = new Map<string, PendingRegistration>();
-
-const PENDING_TTL_MS = 15 * 60 * 1000;
 
 function hashKey(s: string): string {
   return createHash("sha256").update(`taryaq:key:${s}`).digest("hex").slice(0, 32);
@@ -65,9 +57,6 @@ function otpPath(phone: string): string {
 }
 function payAttemptPath(bookingId: string): string {
   return `security/paymentAttempts/${hashKey(bookingId)}`;
-}
-function pendingPath(phoneHash: string): string {
-  return `security/pendingRegistrations/${phoneHash}`;
 }
 
 /* -------------------------- generic helpers -------------------------- */
@@ -420,59 +409,5 @@ export async function resetPaymentAttempts(bookingId: string): Promise<void> {
     await db.ref(payAttemptPath(bookingId)).remove();
   } catch (err) {
     logger.error({ err }, "[security-store] resetPaymentAttempts failed");
-  }
-}
-
-/* --------------------- Pending registrations (15 min TTL) --------------------- */
-
-export async function setPendingRegistration(
-  phoneHash: string,
-  data: PendingRegistration,
-): Promise<void> {
-  memPending.set(phoneHash, data);
-  const db = fbDb();
-  if (!db) return;
-  try {
-    await db.ref(pendingPath(phoneHash)).set(data);
-  } catch (err) {
-    logger.error({ err }, "[security-store] setPendingRegistration failed");
-  }
-}
-
-export async function getPendingRegistration(phoneHash: string): Promise<PendingRegistration | null> {
-  const mem = memPending.get(phoneHash);
-  if (mem) {
-    if (Date.now() - mem.createdAt > PENDING_TTL_MS) {
-      memPending.delete(phoneHash);
-    } else {
-      return mem;
-    }
-  }
-  const db = fbDb();
-  if (!db) return null;
-  try {
-    const snap = await db.ref(pendingPath(phoneHash)).get();
-    if (!snap.exists()) return null;
-    const r = snap.val() as PendingRegistration;
-    if (Date.now() - r.createdAt > PENDING_TTL_MS) {
-      await db.ref(pendingPath(phoneHash)).remove().catch(() => undefined);
-      return null;
-    }
-    memPending.set(phoneHash, r);
-    return r;
-  } catch (err) {
-    logger.error({ err }, "[security-store] getPendingRegistration failed");
-    return null;
-  }
-}
-
-export async function deletePendingRegistration(phoneHash: string): Promise<void> {
-  memPending.delete(phoneHash);
-  const db = fbDb();
-  if (!db) return;
-  try {
-    await db.ref(pendingPath(phoneHash)).remove();
-  } catch (err) {
-    logger.error({ err }, "[security-store] deletePendingRegistration failed");
   }
 }
