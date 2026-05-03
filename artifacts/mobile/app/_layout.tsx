@@ -22,14 +22,38 @@ import { useNotificationSetup } from "@/hooks/useNotifications";
 
 setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
 
-// كتم خطأ fontfaceobserver timeout على الويب — التطبيق يستخدم خطوط النظام كبديل
+// كتم أي خطأ متبقٍ من fontfaceobserver/تحميل الخطوط على الويب
 if (Platform.OS === "web" && typeof window !== "undefined") {
-  window.addEventListener("unhandledrejection", (event) => {
-    const msg = String(event.reason?.message ?? event.reason ?? "");
-    if (msg.includes("ms timeout exceeded") || msg.includes("fontfaceobserver")) {
-      event.preventDefault();
-    }
-  });
+  const isFontTimeout = (msg: string) =>
+    msg.includes("ms timeout exceeded") ||
+    msg.toLowerCase().includes("fontfaceobserver");
+
+  window.addEventListener(
+    "unhandledrejection",
+    (event) => {
+      const msg = String(event.reason?.message ?? event.reason ?? "");
+      if (isFontTimeout(msg)) event.preventDefault();
+    },
+    true,
+  );
+  window.addEventListener(
+    "error",
+    (event) => {
+      const msg = String(event.message ?? event.error?.message ?? "");
+      if (isFontTimeout(msg)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
+  // كتم console.error لنفس السبب حتى لا يلتقطه LogBox
+  const origErr = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    const text = args.map((a) => String((a as { message?: string })?.message ?? a)).join(" ");
+    if (isFontTimeout(text)) return;
+    origErr(...args);
+  };
 }
 
 SplashScreen.preventAutoHideAsync();
@@ -116,12 +140,18 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Tajawal_400Regular,
-    Tajawal_500Medium,
-    Tajawal_700Bold,
-    Tajawal_800ExtraBold,
-  });
+  // على الويب: لا نحمّل خطوط Google لأن الـ proxy قد يحجبها → يسبب fontfaceobserver timeout.
+  // المتصفّحات تعرض العربي بشكل ممتاز عبر خطوط النظام افتراضياً.
+  const [fontsLoaded, fontError] = useFonts(
+    Platform.OS === "web"
+      ? {}
+      : {
+          Tajawal_400Regular,
+          Tajawal_500Medium,
+          Tajawal_700Bold,
+          Tajawal_800ExtraBold,
+        },
+  );
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
