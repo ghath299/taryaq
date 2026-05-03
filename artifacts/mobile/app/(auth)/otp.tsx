@@ -13,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInUp, useAnimatedStyle, useSharedValue, withSequence, withTiming } from "react-native-reanimated";
 import { useRouter } from "expo-router";
+import * as ScreenCapture from "expo-screen-capture";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
@@ -41,6 +42,21 @@ export default function OTPScreen() {
       setCountdown((c) => (c > 0 ? c - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // منع التقاط الشاشة على شاشة OTP فقط — يُفعَّل عند الدخول، يُلغى عند المغادرة
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    let active = true;
+    ScreenCapture.preventScreenCaptureAsync().catch((err) => {
+      console.warn("[OTP] preventScreenCapture failed:", err);
+    });
+    return () => {
+      active = false;
+      ScreenCapture.allowScreenCaptureAsync().catch((err) => {
+        if (active) console.warn("[OTP] allowScreenCapture failed:", err);
+      });
+    };
   }, []);
 
   const shakeStyle = useAnimatedStyle(() => ({
