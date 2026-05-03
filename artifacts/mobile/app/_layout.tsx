@@ -139,6 +139,7 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen name="search" options={{ headerShown: false }} />
+      <Stack.Screen name="osm-map" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile"
         options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }}
