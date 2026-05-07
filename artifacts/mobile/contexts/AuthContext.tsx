@@ -66,6 +66,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_STORAGE_KEY = "@taryaq_auth";
 
+// Firebase Web SDK — يشتغل على الويب فقط
+let firebaseAuth: any = null;
+let signInWithPhoneNumberFn: any = null;
+let RecaptchaVerifierClass: any = null;
+
+if (Platform.OS === "web") {
+  const { auth } = require("@/lib/firebase");
+  const mod = require("firebase/auth");
+  firebaseAuth = auth;
+  signInWithPhoneNumberFn = mod.signInWithPhoneNumber;
+  RecaptchaVerifierClass = mod.RecaptchaVerifier;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -80,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     { lat: number; lng: number; province: string } | undefined
   >();
   const [otpSentAt, setOtpSentAt] = useState(0);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
 
   useEffect(() => {
     loadAuthState();
@@ -129,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // تحقق من الـ backend أولاً — rate limiting + validation
       const apiUrl = getApiUrl();
-      const res = await fetch(`${apiUrl}/api/auth/send-otp`, {
+      const res = await fetch(`${apiUrl}/api/auth/register-pending`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -152,6 +165,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           message: data.message || "فشل إرسال رمز التحقق",
           blocked: res.status === 429,
         };
+      }
+
+      if (Platform.OS === "web") {
+        // على الويب — Firebase SMS مباشرة
+        const internationalPhone = "+964" + phoneNumber.slice(1);
+
+        // نظف الـ reCAPTCHA القديم قبل إنشاء واحد جديد
+        const container = document.getElementById("recaptcha-container");
+        if (container) container.innerHTML = "";
+
+        const recaptchaVerifier = new RecaptchaVerifierClass(
+          firebaseAuth,
+          "recaptcha-container",
+          { size: "invisible" },
+        );
+        const result = await signInWithPhoneNumberFn(
+          firebaseAuth,
+          internationalPhone,
+          recaptchaVerifier,
+        );
+        setConfirmationResult(result);
       }
 
       if (data.sentAt) setOtpSentAt(data.sentAt);
@@ -291,59 +325,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const phoneNumber = user?.phoneNumber || pendingPhone;
 
-    try {
-      const apiUrl = getApiUrl();
-      const res = await fetch(`${apiUrl}/api/auth/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber,
-          code: cleanCode,
-          inputDurationMs,
-          honeypot: pendingHoneypot,
-        }),
-      });
-
-      const data = (await res.json()) as {
-        success?: boolean;
-        message?: string;
-        attemptsRemaining?: number;
-        accessToken?: string;
-        refreshToken?: string;
-        accessExpiresAt?: number;
-        refreshExpiresAt?: number;
-      };
-
-      if (!res.ok || !data.success) {
-        return {
-          success: false,
-          message: data.message,
-          attemptsRemaining: data.attemptsRemaining,
-          blocked: res.status === 429,
-          expired: data.message?.includes("انتهت الصلاحية"),
-        };
+    if (Platform.OS === "web") {
+      if (!confirmationResult) {
+        return { success: false, message: "انتهت الجلسة، أعد إرسال الرمز" };
       }
+      try {
+        const userCredential = await confirmationResult.confirm(cleanCode);
+        const idToken = await userCredential.user.getIdToken();
+        const apiUrl = getApiUrl();
 
-      if (
-        data.accessToken &&
-        data.refreshToken &&
-        data.accessExpiresAt &&
-        data.refreshExpiresAt
-      ) {
-        await saveTokens({
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-          accessExpiresAt: data.accessExpiresAt,
-          refreshExpiresAt: data.refreshExpiresAt,
+        const res = await fetch(`${apiUrl}/api/auth/verify-firebase-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken,
+            phoneNumber,
+            inputDurationMs,
+            honeypot: pendingHoneypot,
+          }),
         });
-      }
 
-      await finalizeLogin(phoneNumber);
-      return { success: true };
-    } catch (e: any) {
-      logger.error("[AuthContext] verifyOTP error:", e);
-      return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
+        const data = (await res.json()) as {
+          success?: boolean;
+          message?: string;
+          attemptsRemaining?: number;
+          accessToken?: string;
+          refreshToken?: string;
+          accessExpiresAt?: number;
+          refreshExpiresAt?: number;
+        };
+
+        if (!res.ok || !data.success) {
+          return {
+            success: false,
+            message: data.message,
+            attemptsRemaining: data.attemptsRemaining,
+            blocked: res.status === 429,
+            expired: data.message?.includes("انتهت الصلاحية"),
+          };
+        }
+
+        if (
+          data.accessToken &&
+          data.refreshToken &&
+          data.accessExpiresAt &&
+          data.refreshExpiresAt
+        ) {
+          await saveTokens({
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken,
+            accessExpiresAt: data.accessExpiresAt,
+            refreshExpiresAt: data.refreshExpiresAt,
+          });
+        }
+
+        await finalizeLogin(phoneNumber);
+        return { success: true };
+      } catch (e: any) {
+        logger.error("[AuthContext] Firebase verifyOTP error:", e);
+        if (e.code === "auth/invalid-verification-code") {
+          return { success: false, message: "رمز التحقق غير صحيح" };
+        }
+        if (e.code === "auth/code-expired") {
+          return {
+            success: false,
+            message: "انتهت صلاحية الرمز",
+            expired: true,
+          };
+        }
+        return { success: false, message: "حدث خطأ — تحقق من اتصالك" };
+      }
     }
+
+    // على الجوال مؤقتاً — سيتغير عند بناء APK
+    return { success: false, message: "يرجى استخدام الويب للاختبار الآن" };
   };
 
   const resendOTP = async (): Promise<OTPResult> => {
@@ -373,6 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingHoneypot("");
     setPendingLocation(undefined);
     setOtpSentAt(0);
+    setConfirmationResult(null);
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     await clearTokens();
   };
