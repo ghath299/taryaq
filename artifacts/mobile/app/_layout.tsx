@@ -60,7 +60,11 @@ import { useNotificationSetup } from "@/hooks/useNotifications";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  setBaseUrl(window.location.origin);
+} else {
+  setBaseUrl(`https://${process.env["EXPO_PUBLIC_DOMAIN"]}`);
+}
 
 if (Platform.OS === "web" && typeof document !== "undefined") {
   const link = document.createElement("link");
