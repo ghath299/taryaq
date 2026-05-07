@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getDatabase } from "firebase/database";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, browserLocalPersistence, getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBD2_B1RRQ7RSeTXYjhsUd-314juYMkOaI",
@@ -14,6 +14,17 @@ const firebaseConfig = {
 
 const app =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
 export const database = getDatabase(app);
-export const auth = getAuth(app);
+
+export const auth = (() => {
+  try {
+    return initializeAuth(app, {
+      persistence: browserLocalPersistence,
+    });
+  } catch {
+    return getAuth(app);
+  }
+})();
+
 export default app;
