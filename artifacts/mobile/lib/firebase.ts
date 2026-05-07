@@ -1,6 +1,10 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getDatabase } from "firebase/database";
-import { initializeAuth, browserLocalPersistence, getAuth } from "firebase/auth";
+import {
+  initializeAuth,
+  browserLocalPersistence,
+  getAuth,
+} from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBD2_B1RRQ7RSeTXYjhsUd-314juYMkOaI",
@@ -26,5 +30,8 @@ export const auth = (() => {
     return getAuth(app);
   }
 })();
+
+// تعطيل reCAPTCHA Enterprise واستخدام v2 العادي
+(app as any).options._authTokenSyncURL = undefined;
 
 export default app;
