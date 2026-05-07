@@ -70,17 +70,16 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href =
-    "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap&subset=arabic";
+    "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap";
   document.head.appendChild(link);
   const style = document.createElement("style");
-  const CAIRO_BASE = "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hOA-W1Q.woff2";
-  const CAIRO_500 = "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0hOA-W1Q.woff2";
+  const BASE = "https://fonts.gstatic.com/s/cairo/v31/SLXgc1nY6HkvangtZmpQdkhzfH5lkSs2SgRjCAGMQ1z0h";
   style.textContent = `
-    @font-face { font-family: 'Cairo-Regular';   src: url('${CAIRO_BASE}') format('woff2'); font-weight: 400; font-display: swap; }
-    @font-face { font-family: 'Cairo-Medium';    src: url('${CAIRO_500}') format('woff2'); font-weight: 500; font-display: swap; }
-    @font-face { font-family: 'Cairo-SemiBold';  src: url('${CAIRO_500}') format('woff2'); font-weight: 600; font-display: swap; }
-    @font-face { font-family: 'Cairo-Bold';      src: url('${CAIRO_500}') format('woff2'); font-weight: 700; font-display: swap; }
-    @font-face { font-family: 'Cairo-ExtraBold'; src: url('${CAIRO_500}') format('woff2'); font-weight: 800; font-display: swap; }
+    @font-face { font-family: 'Cairo-Regular';   src: url('${BASE}OA-W1Q.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'Cairo-Medium';    src: url('${BASE}NI-W1Q.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+    @font-face { font-family: 'Cairo-SemiBold';  src: url('${BASE}D45W1Q.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+    @font-face { font-family: 'Cairo-Bold';      src: url('${BASE}Ac5W1Q.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+    @font-face { font-family: 'Cairo-ExtraBold'; src: url('${BASE}GA5W1Q.ttf') format('truetype'); font-weight: 800; font-display: swap; }
     body, html, #root { font-family: 'Cairo', system-ui, sans-serif; }
   `;
   document.head.appendChild(style);
