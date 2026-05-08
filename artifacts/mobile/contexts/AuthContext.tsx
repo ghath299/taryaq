@@ -123,6 +123,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const waitForRecaptchaContainer = (): Promise<void> => {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (document.getElementById("recaptcha-container")) {
+          resolve();
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+    });
+  };
+
   const sendOTP = async (
     fullName: string,
     phoneNumber: string,
@@ -157,8 +170,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (Platform.OS === "web") {
         const internationalPhone = "+964" + phoneNumber.slice(1);
+
+        // ننتظر حتى يكون الـ container موجود في الـ DOM
+        await waitForRecaptchaContainer();
+
         const container = document.getElementById("recaptcha-container");
         if (container) container.innerHTML = "";
+
         const recaptchaVerifier = new RecaptchaVerifierClass(
           firebaseAuth,
           "recaptcha-container",
