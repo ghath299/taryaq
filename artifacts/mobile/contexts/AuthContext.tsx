@@ -178,8 +178,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const recaptchaVerifier = new RecaptchaVerifierClass(
           firebaseAuth,
           "recaptcha-container",
-          { size: "normal" },
+          {
+            size: "invisible",
+            callback: () => {},
+          },
         );
+        await recaptchaVerifier.render();
         const result = await signInWithPhoneNumberFn(
           firebaseAuth,
           internationalPhone,
