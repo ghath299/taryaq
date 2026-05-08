@@ -8,7 +8,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
-import { saveUser as saveUserToFirebase, getUser } from "@/lib/firebase-data";
+import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
 import {
   saveTokens,
   clearTokens,
@@ -27,9 +27,6 @@ export interface AuthUser {
   locationGranted: boolean;
   isVerified: boolean;
   avatarUri?: string;
-  gender?: string;
-  birthDate?: string;
-  bloodType?: string;
 }
 
 interface OTPResult {
@@ -112,32 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
           await clearTokens();
         } else {
-          // جيب أحدث البيانات من Firebase لتحديث المحلي
-          if (parsed.phoneNumber) {
-            try {
-              const fbUser = await getUser(parsed.phoneNumber);
-              if (fbUser) {
-                const merged: AuthUser = {
-                  ...parsed,
-                  id: fbUser.id || parsed.id,
-                  fullName: fbUser.name || parsed.fullName,
-                  avatarUri: fbUser.avatarUri || parsed.avatarUri,
-                  gender: fbUser.gender || parsed.gender,
-                  birthDate: fbUser.birthDate || parsed.birthDate,
-                  bloodType: fbUser.bloodType || parsed.bloodType,
-                };
-                setUser(merged);
-                await saveAuthState(merged);
-              } else {
-                setUser(parsed);
-              }
-            } catch {
-              // لو Firebase فشل — استخدم البيانات المحلية
-              setUser(parsed);
-            }
-          } else {
-            setUser(parsed);
-          }
+          setUser(parsed);
           if (parsed.role && parsed.isVerified && parsed.locationGranted) {
             setAuthStep("complete");
           }
@@ -168,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     location?: { lat: number; lng: number; province: string },
   ): Promise<OTPResult> => {
     try {
+      // تحقق من الـ backend أولاً — rate limiting + validation
       const apiUrl = getApiUrl();
       const res = await fetch(`${apiUrl}/api/auth/register-pending`, {
         method: "POST",
@@ -195,8 +168,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (Platform.OS === "web") {
+        // على الويب — Firebase SMS مباشرة
         const internationalPhone = "+964" + phoneNumber.slice(1);
 
+        // نظف الـ reCAPTCHA القديم قبل إنشاء واحد جديد
         const container = document.getElementById("recaptcha-container");
         if (container) container.innerHTML = "";
 
@@ -323,10 +298,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: fbUser.id,
             isVerified: true,
             role,
-            avatarUri: fbUser.avatarUri || currentUser.avatarUri,
-            gender: fbUser.gender || currentUser.gender,
-            birthDate: fbUser.birthDate || currentUser.birthDate,
-            bloodType: fbUser.bloodType || currentUser.bloodType,
           };
           saveAuthState(updatedUser);
           return updatedUser;
@@ -430,6 +401,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // على الجوال مؤقتاً — سيتغير عند بناء APK
     return { success: false, message: "يرجى استخدام الويب للاختبار الآن" };
   };
 

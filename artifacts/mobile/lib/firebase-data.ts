@@ -15,10 +15,6 @@ export interface FirebaseUser {
   id: string;
   name: string;
   phone: string;
-  avatarUri?: string;
-  gender?: string;
-  birthDate?: string;
-  bloodType?: string;
   fcmToken?: string | null;
   createdAt?: number | object;
   updatedAt?: number | object;
@@ -50,13 +46,20 @@ export type PaymentMethod =
 
 export type PaymentStatus = "غير مدفوع" | "قيد الدفع" | "مدفوع" | "فشل";
 
-export type EscrowStatus = "pending" | "held" | "paid" | "refunded" | "failed";
+export type EscrowStatus =
+  | "pending"
+  | "held"
+  | "paid"
+  | "refunded"
+  | "failed";
 
 export interface ClinicPaymentSettings {
   electronicPaymentEnabled: boolean;
+  /** آخر 4 أرقام فقط من البطاقة (لا تخزّن الرقم الكامل على العميل) */
   qiCardLast4?: string;
   cardHolderName?: string;
   merchantId?: string;
+  /** يجب أن يبقى فارغاً على العميل ويُحفظ على الخادم فقط */
   apiKey?: string;
   updatedAt?: number | object;
 }
@@ -124,11 +127,7 @@ export async function saveUser(params: {
     id,
     name: params.name,
     phone: params.phone,
-    fcmToken: params.fcmToken ?? existing.val()?.fcmToken ?? null,
-    avatarUri: existing.val()?.avatarUri ?? null,
-    gender: existing.val()?.gender ?? null,
-    birthDate: existing.val()?.birthDate ?? null,
-    bloodType: existing.val()?.bloodType ?? null,
+    fcmToken: params.fcmToken ?? (existing.val()?.fcmToken ?? null),
     createdAt: existing.exists() ? existing.val().createdAt : serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -137,27 +136,7 @@ export async function saveUser(params: {
   return data;
 }
 
-export async function updateUserProfile(
-  phone: string,
-  profile: {
-    name?: string;
-    avatarUri?: string;
-    gender?: string;
-    birthDate?: string;
-    bloodType?: string;
-  },
-): Promise<void> {
-  const id = userIdFromPhone(phone);
-  await update(ref(database, `users/${id}`), {
-    ...profile,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function updateUserFcmToken(
-  phone: string,
-  fcmToken: string,
-): Promise<void> {
+export async function updateUserFcmToken(phone: string, fcmToken: string): Promise<void> {
   const id = userIdFromPhone(phone);
   await update(ref(database, `users/${id}`), {
     fcmToken,
@@ -173,7 +152,7 @@ export async function getUser(phone: string): Promise<FirebaseUser | null> {
 
 export function subscribeToClinic(
   clinicId: string,
-  callback: (clinic: FirebaseClinic | null) => void,
+  callback: (clinic: FirebaseClinic | null) => void
 ): () => void {
   const clinicRef = ref(database, `clinics/${clinicId}`);
   const handler = (snap: DataSnapshot) => {
@@ -183,18 +162,14 @@ export function subscribeToClinic(
   return () => off(clinicRef, "value", handler);
 }
 
-export async function getClinic(
-  clinicId: string,
-): Promise<FirebaseClinic | null> {
+export async function getClinic(clinicId: string): Promise<FirebaseClinic | null> {
   const snap = await get(ref(database, `clinics/${clinicId}`));
   return snap.exists() ? (snap.val() as FirebaseClinic) : null;
 }
 
 export async function createBooking(
   clinicId: string,
-  booking: Omit<FirebaseBooking, "createdAt" | "status"> & {
-    status?: BookingStatus;
-  },
+  booking: Omit<FirebaseBooking, "createdAt" | "status"> & { status?: BookingStatus }
 ): Promise<string> {
   const bookingsRef = ref(database, `clinics/${clinicId}/bookings`);
   const newRef = push(bookingsRef);
@@ -209,19 +184,13 @@ export async function createBooking(
 
 export function subscribeToUserBookings(
   accountOwnerId: string,
-  callback: (
-    bookings: Array<FirebaseBooking & { id: string; clinicId: string }>,
-  ) => void,
+  callback: (bookings: Array<FirebaseBooking & { id: string; clinicId: string }>) => void
 ): () => void {
   const clinicsRef = ref(database, "clinics");
   const handler = (snap: DataSnapshot) => {
-    const result: Array<FirebaseBooking & { id: string; clinicId: string }> =
-      [];
+    const result: Array<FirebaseBooking & { id: string; clinicId: string }> = [];
     if (snap.exists()) {
-      const clinics = snap.val() as Record<
-        string,
-        { bookings?: Record<string, FirebaseBooking> }
-      >;
+      const clinics = snap.val() as Record<string, { bookings?: Record<string, FirebaseBooking> }>;
       for (const [clinicId, clinic] of Object.entries(clinics)) {
         if (!clinic.bookings) continue;
         for (const [bookingId, booking] of Object.entries(clinic.bookings)) {
@@ -241,13 +210,15 @@ export async function updateBookingStatus(
   clinicId: string,
   bookingId: string,
   status: BookingStatus,
-  extra?: Partial<FirebaseBooking>,
+  extra?: Partial<FirebaseBooking>
 ): Promise<void> {
   await update(ref(database, `clinics/${clinicId}/bookings/${bookingId}`), {
     status,
     ...(extra || {}),
   });
 }
+
+/* -------------------- Clinic payment settings -------------------- */
 
 export async function getClinicPaymentSettings(
   clinicId: string,
@@ -277,6 +248,8 @@ export function subscribeToClinicPaymentSettings(
   return () => off(r, "value", handler);
 }
 
+/* -------------------- Transactions -------------------- */
+
 export async function getTransaction(
   transactionId: string,
 ): Promise<FirebaseTransaction | null> {
@@ -286,7 +259,9 @@ export async function getTransaction(
 
 export function subscribeToClinicTransactions(
   clinicId: string,
-  callback: (transactions: Array<FirebaseTransaction & { id: string }>) => void,
+  callback: (
+    transactions: Array<FirebaseTransaction & { id: string }>,
+  ) => void,
 ): () => void {
   const r = ref(database, "transactions");
   const handler = (snap: DataSnapshot) => {
