@@ -8,7 +8,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
-import { saveUser as saveUserToFirebase } from "@/lib/firebase-data";
+import { saveUser as saveUserToFirebase, getUserProfile } from "@/lib/firebase-data";
 import {
   saveTokens,
   clearTokens,
@@ -46,27 +46,18 @@ interface AuthContextType {
   setUser: (user: AuthUser | null) => void;
   setAuthStep: (step: "login" | "location" | "otp" | "complete") => void;
   setPendingPhone: (phone: string) => void;
-  login: (
-    fullName: string,
-    phoneNumber: string,
-    honeypot?: string,
-  ) => Promise<void>;
+  login: (fullName: string, phoneNumber: string, honeypot?: string) => Promise<void>;
   verifyOTP: (code: string, inputDurationMs?: number) => Promise<OTPResult>;
   resendOTP: () => Promise<OTPResult>;
   sendOTPAndProceed: () => Promise<OTPResult>;
   otpSentAt: number;
-  setLocationGranted: (coords?: {
-    lat: number;
-    lng: number;
-    province: string;
-  }) => Promise<void>;
+  setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_STORAGE_KEY = "@taryaq_auth";
 
-// Firebase Web SDK — يشتغل على الويب فقط
 let firebaseAuth: any = null;
 let signInWithPhoneNumberFn: any = null;
 let RecaptchaVerifierClass: any = null;
@@ -82,9 +73,7 @@ if (Platform.OS === "web") {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<
-    "login" | "location" | "otp" | "complete"
-  >("login");
+  const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete">("login");
   const [pendingPhone, setPendingPhone] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [pendingHoneypot, setPendingHoneypot] = useState("");
@@ -140,7 +129,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     location?: { lat: number; lng: number; province: string },
   ): Promise<OTPResult> => {
     try {
-      // تحقق من الـ backend أولاً — rate limiting + validation
       const apiUrl = getApiUrl();
       const res = await fetch(`${apiUrl}/api/auth/register-pending`, {
         method: "POST",
@@ -168,13 +156,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (Platform.OS === "web") {
-        // على الويب — Firebase SMS مباشرة
         const internationalPhone = "+964" + phoneNumber.slice(1);
-
-        // نظف الـ reCAPTCHA القديم قبل إنشاء واحد جديد
         const container = document.getElementById("recaptcha-container");
         if (container) container.innerHTML = "";
-
         const recaptchaVerifier = new RecaptchaVerifierClass(
           firebaseAuth,
           "recaptcha-container",
@@ -212,11 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (
-    fullName: string,
-    phoneNumber: string,
-    honeypot: string = "",
-  ) => {
+  const login = async (fullName: string, phoneNumber: string, honeypot: string = "") => {
     const cleanPhone = phoneNumber.replace(/\D/g, "").slice(0, 11);
     const cleanName = fullName
       .replace(/[<>"'`;{}()$\\]/g, "")
@@ -287,10 +267,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const finalizeLogin = async (phoneNumber: string) => {
     const role = await fetchUserRole(phoneNumber);
     try {
+      const savedProfile = await getUserProfile(phoneNumber);
+
       const fbUser = await saveUserToFirebase({
         phone: phoneNumber,
-        name: user?.fullName || pendingName,
+        name: savedProfile?.name || user?.fullName || pendingName,
       });
+
       setUser((currentUser) => {
         if (currentUser) {
           const updatedUser = {
@@ -298,6 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: fbUser.id,
             isVerified: true,
             role,
+            fullName: savedProfile?.name || currentUser.fullName,
+            avatarUri: savedProfile?.avatarUri || currentUser.avatarUri,
           };
           saveAuthState(updatedUser);
           return updatedUser;
@@ -318,10 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStep("complete");
   };
 
-  const verifyOTP = async (
-    code: string,
-    inputDurationMs: number = 9999,
-  ): Promise<OTPResult> => {
+  const verifyOTP = async (code: string, inputDurationMs: number = 9999): Promise<OTPResult> => {
     const cleanCode = code.replace(/\D/g, "");
     if (cleanCode.length !== 6) {
       return { success: false, message: "الرمز يجب أن يكون 6 أرقام" };
@@ -401,15 +383,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // على الجوال مؤقتاً — سيتغير عند بناء APK
     return { success: false, message: "يرجى استخدام الويب للاختبار الآن" };
   };
 
   const resendOTP = async (): Promise<OTPResult> => {
     const phoneNumber = user?.phoneNumber || pendingPhone;
     const fullName = user?.fullName || pendingName;
-    if (!phoneNumber)
-      return { success: false, message: "رقم الهاتف غير موجود" };
+    if (!phoneNumber) return { success: false, message: "رقم الهاتف غير موجود" };
     return sendOTP(fullName, phoneNumber, pendingLocation);
   };
 

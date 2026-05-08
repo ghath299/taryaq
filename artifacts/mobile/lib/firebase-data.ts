@@ -15,6 +15,7 @@ export interface FirebaseUser {
   id: string;
   name: string;
   phone: string;
+  avatarUri?: string;
   fcmToken?: string | null;
   createdAt?: number | object;
   updatedAt?: number | object;
@@ -55,11 +56,9 @@ export type EscrowStatus =
 
 export interface ClinicPaymentSettings {
   electronicPaymentEnabled: boolean;
-  /** آخر 4 أرقام فقط من البطاقة (لا تخزّن الرقم الكامل على العميل) */
   qiCardLast4?: string;
   cardHolderName?: string;
   merchantId?: string;
-  /** يجب أن يبقى فارغاً على العميل ويُحفظ على الخادم فقط */
   apiKey?: string;
   updatedAt?: number | object;
 }
@@ -127,6 +126,7 @@ export async function saveUser(params: {
     id,
     name: params.name,
     phone: params.phone,
+    avatarUri: existing.val()?.avatarUri ?? undefined,
     fcmToken: params.fcmToken ?? (existing.val()?.fcmToken ?? null),
     createdAt: existing.exists() ? existing.val().createdAt : serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -149,6 +149,38 @@ export async function getUser(phone: string): Promise<FirebaseUser | null> {
   const snap = await get(ref(database, `users/${id}`));
   return snap.exists() ? (snap.val() as FirebaseUser) : null;
 }
+
+// ==================== User Profile ====================
+
+export async function updateUserProfile(params: {
+  phone: string;
+  name?: string;
+  avatarUri?: string | null;
+}): Promise<void> {
+  const id = userIdFromPhone(params.phone);
+  const updates: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+  };
+  if (params.name !== undefined) updates.name = params.name;
+  if (params.avatarUri !== undefined) updates.avatarUri = params.avatarUri;
+  await update(ref(database, `users/${id}`), updates);
+}
+
+export async function getUserProfile(phone: string): Promise<{
+  name?: string;
+  avatarUri?: string;
+} | null> {
+  const id = userIdFromPhone(phone);
+  const snap = await get(ref(database, `users/${id}`));
+  if (!snap.exists()) return null;
+  const val = snap.val() as FirebaseUser;
+  return {
+    name: val.name,
+    avatarUri: val.avatarUri,
+  };
+}
+
+// ==================== Clinics ====================
 
 export function subscribeToClinic(
   clinicId: string,
@@ -218,7 +250,7 @@ export async function updateBookingStatus(
   });
 }
 
-/* -------------------- Clinic payment settings -------------------- */
+// ==================== Clinic Payment Settings ====================
 
 export async function getClinicPaymentSettings(
   clinicId: string,
@@ -248,7 +280,7 @@ export function subscribeToClinicPaymentSettings(
   return () => off(r, "value", handler);
 }
 
-/* -------------------- Transactions -------------------- */
+// ==================== Transactions ====================
 
 export async function getTransaction(
   transactionId: string,

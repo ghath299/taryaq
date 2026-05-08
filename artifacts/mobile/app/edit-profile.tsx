@@ -23,6 +23,7 @@ import { ThemedText } from "@/components/ThemedText";
 import ImageEditorModal from "@/components/ImageEditorModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
+import { updateUserProfile } from "@/lib/firebase-data";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 
 const BRAND_BLUE_DEEP = "#1F40C8";
@@ -92,6 +93,14 @@ export default function EditProfileScreen() {
     if (!user) return;
     setSaving(true);
     try {
+      // حفظ في Firebase أولاً
+      await updateUserProfile({
+        phone: user.phoneNumber,
+        name: trimmed,
+        avatarUri: avatarUri ?? null,
+      });
+
+      // تحديث الحالة المحلية
       const updated = {
         ...user,
         fullName: trimmed,
@@ -292,29 +301,6 @@ const styles = StyleSheet.create({
     marginRight: Spacing.xs,
     fontWeight: "700",
     fontSize: 12,
-  },
-  presetCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    padding: Spacing.lg,
-  },
-  presetRow: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  presetItem: {
-    width: 64, height: 64, borderRadius: 32,
-    borderWidth: 2, borderColor: "transparent",
-    overflow: "hidden", position: "relative",
-  },
-  presetImg: { width: "100%", height: "100%", borderRadius: 32 },
-  presetCheck: {
-    position: "absolute", bottom: 0, right: 0,
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: BRAND_BLUE,
-    borderWidth: 2, borderColor: "#FFF",
-    alignItems: "center", justifyContent: "center",
   },
   inputCard: {
     flexDirection: "row-reverse",
