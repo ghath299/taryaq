@@ -116,7 +116,14 @@ export default function LocationScreen() {
       {Platform.OS === "web" && (
         <div
           id="recaptcha-container"
-          style={{ position: "absolute", bottom: 0, zIndex: -1 }}
+          style={{
+            position: "absolute",
+            bottom: 20,
+            left: 0,
+            right: 0,
+            display: "flex",
+            justifyContent: "center",
+          }}
         />
       )}
 
