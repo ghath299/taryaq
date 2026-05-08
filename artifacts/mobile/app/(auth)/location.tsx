@@ -112,20 +112,6 @@ export default function LocationScreen() {
       edges={["top"]}
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
     >
-      {/* مطلوب لـ Firebase reCAPTCHA — يجب أن يكون موجوداً قبل استدعاء signInWithPhoneNumber */}
-      {Platform.OS === "web" && (
-        <div
-          id="recaptcha-container"
-          style={{
-            position: "absolute",
-            bottom: 20,
-            left: 0,
-            right: 0,
-            display: "flex",
-            justifyContent: "center",
-          }}
-        />
-      )}
 
       <ScrollView
         contentContainerStyle={[

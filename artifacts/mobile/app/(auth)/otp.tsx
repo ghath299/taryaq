@@ -161,14 +161,6 @@ export default function OTPScreen() {
       edges={["top"]}
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
     >
-      {/* مطلوب لـ Firebase reCAPTCHA — الويب فقط */}
-      {Platform.OS === "web" && (
-        <div
-          id="recaptcha-container"
-          style={{ position: "absolute", bottom: 0, zIndex: -1 }}
-        />
-      )}
-
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
