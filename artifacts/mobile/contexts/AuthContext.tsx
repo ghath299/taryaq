@@ -257,13 +257,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logger.error("[AuthContext] sendOTP failed:", e);
       }
       setAuthStep("otp");
-    }, 50);
+    }, 500);
   };
 
   const sendOTPAndProceed = async (): Promise<OTPResult> => {
     const result = await sendOTP(pendingName, pendingPhone, pendingLocation);
     if (result.success) {
-      setTimeout(() => setAuthStep("otp"), 50);
+      setTimeout(() => setAuthStep("otp"), 500);
     }
     return result;
   };
