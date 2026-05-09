@@ -1,0 +1,120 @@
+عندي مشكلة Firebase Phone Authentication داخل Expo Web على Replit.
+
+الخطأ الحالي في Network Response:
+INVALID_APP_CREDENTIAL
+عند:
+accounts:sendVerificationCode
+
+معلومات مهمة:
+
+- الدومين web-arabic-manager.replit.app موجود داخل Firebase Authorized Domains.
+- Phone Authentication مفعل داخل Firebase.
+- reCAPTCHA يظهر ويعمل.
+- التطبيق يعمل على Web داخل Replit.
+- واجهة الإدخال تحتوي +964 ثابت داخل حقل رقم الهاتف.
+
+أريدك تفحص المشروع كاملًا وتصلح Firebase Phone OTP + reCAPTCHA بشكل نهائي بدون تغيير تصميم الواجهة أو حذف نظام التسجيل.
+
+نفّذ التالي بدقة:
+
+1. افحص firebaseConfig وتأكد أنه يخص نفس مشروع Firebase الذي يحتوي:
+   web-arabic-manager.replit.app
+   داخل Authorized Domains.
+
+2. اطبع مؤقتًا داخل Console:
+   auth.app.options.projectId
+   auth.app.options.authDomain
+   window.location.hostname
+
+3. ابحث عن جميع أماكن إنشاء RecaptchaVerifier داخل المشروع.
+   امنع إنشاء أكثر من verifier بنفس الوقت.
+
+4. استخدم Firebase v9 modular syntax الصحيحة فقط:
+   import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+
+5. أصلح إنشاء reCAPTCHA بهذا النمط:
+
+if (window.recaptchaVerifier?.clear) {
+window.recaptchaVerifier.clear();
+}
+
+window.recaptchaVerifier = new RecaptchaVerifier(
+auth,
+"recaptcha-container",
+{
+size: "normal",
+callback: () => {
+console.log("reCAPTCHA solved");
+},
+"expired-callback": () => {
+console.log("reCAPTCHA expired");
+window.recaptchaVerifier = null;
+}
+}
+);
+
+6. تأكد أن داخل صفحة OTP يوجد:
+
+<div id="recaptcha-container"></div>7. أصلح معالجة رقم الهاتف:
+
+إذا المستخدم كتب:
+0780xxxxxxx
+حوّله إلى:
++964780xxxxxxx
+
+إذا المستخدم كتب:
+780xxxxxxx
+حوّله إلى:
++964780xxxxxxx
+
+إذا المستخدم كتب +964 مسبقًا لا تضفه مرة ثانية.
+
+امنع تكوين أرقام خاطئة مثل:
++9640780xxxxxxx
+أو:
++964+964780xxxxxxx
+
+8. قبل signInWithPhoneNumber اطبع الرقم النهائي داخل Console.
+
+9. استخدم:
+
+const appVerifier = window.recaptchaVerifier;
+
+const confirmationResult = await signInWithPhoneNumber(
+auth,
+formattedPhone,
+appVerifier
+);
+
+10. أضف معالجة أخطاء واضحة:
+
+INVALID_APP_CREDENTIAL:
+"مشكلة في اعتماد التطبيق أو reCAPTCHA."
+
+INVALID_PHONE_NUMBER:
+"رقم الهاتف غير صحيح."
+
+TOO_MANY_ATTEMPTS_TRY_LATER:
+"محاولات كثيرة، انتظر قليلًا."
+
+CAPTCHA_CHECK_FAILED:
+"فشل التحقق، أعد المحاولة."
+
+11. بعد الإصلاح:
+
+- شغّل التطبيق
+- اختبر OTP على:
+  https://web-arabic-manager.replit.app
+- تأكد أن Firebase يرسل الكود بدون خطأ 400.
+
+مهم:
+لا تغيّر تصميم الشاشة.
+لا تغيّر RTL/LTR.
+لا تحذف أي جزء من نظام التسجيل.
+فقط أصلح Firebase Phone Authentication + reCAPTCHA بشكل نهائي.
+
+وفي النهاية اذكر:
+
+- الملفات التي تم تعديلها
+- سبب كل تعديل
+- السبب الحقيقي للمشكلة

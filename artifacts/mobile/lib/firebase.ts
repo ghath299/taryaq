@@ -14,7 +14,6 @@ const firebaseConfig = {
   storageBucket: "ghath-c86ae.firebasestorage.app",
   messagingSenderId: "309047121444",
   appId: "1:309047121444:web:392d4dd79b25d8d5276ab1",
-  recaptchaEnterpriseKey: "6LdMzd4sAAAAAEelojLDT-sh1RmCjjfuHtlDBEVC",
 };
 
 const app =

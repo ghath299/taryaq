@@ -7,6 +7,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import {
   useSafeAreaInsets,
@@ -317,6 +318,13 @@ export default function OTPScreen() {
               تحقق من رسائل SMS على رقمك العراقي
             </ThemedText>
           </Animated.View>
+
+          {Platform.OS === "web" && (
+            <View
+              nativeID="recaptcha-container"
+              style={styles.recaptchaContainer}
+            />
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -371,5 +379,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     marginTop: Spacing["2xl"],
+  },
+  recaptchaContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.xl,
+    minHeight: 78,
   },
 });

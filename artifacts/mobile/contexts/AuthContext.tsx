@@ -70,6 +70,25 @@ if (Platform.OS === "web") {
   RecaptchaVerifierClass = mod.RecaptchaVerifier;
 }
 
+function formatToE164(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("964")) return "+" + digits;
+  if (digits.startsWith("0")) return "+964" + digits.slice(1);
+  return "+964" + digits;
+}
+
+function clearRecaptcha() {
+  const w = window as any;
+  try {
+    if (w.recaptchaVerifier?.clear) {
+      w.recaptchaVerifier.clear();
+    }
+  } catch {}
+  w.recaptchaVerifier = null;
+  const container = document.getElementById("recaptcha-container");
+  if (container) container.innerHTML = "";
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -169,27 +188,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (Platform.OS === "web") {
-        const internationalPhone = "+964" + phoneNumber.slice(1);
+        const formattedPhone = formatToE164(phoneNumber);
 
-        // ننتظر حتى يكون الـ container موجود في الـ DOM
+        console.log("[Firebase Auth] projectId:", firebaseAuth?.app?.options?.projectId);
+        console.log("[Firebase Auth] authDomain:", firebaseAuth?.app?.options?.authDomain);
+        console.log("[Firebase Auth] hostname:", window.location.hostname);
+        console.log("[Firebase Auth] formattedPhone:", formattedPhone);
+
         await waitForRecaptchaContainer();
 
-        const container = document.getElementById("recaptcha-container");
-        if (container) container.innerHTML = "";
+        clearRecaptcha();
 
-        const recaptchaVerifier = new RecaptchaVerifierClass(
+        const w = window as any;
+        w.recaptchaVerifier = new RecaptchaVerifierClass(
           firebaseAuth,
           "recaptcha-container",
           {
-            size: "invisible",
-            callback: () => {},
+            size: "normal",
+            callback: () => {
+              console.log("[reCAPTCHA] solved ✓");
+            },
+            "expired-callback": () => {
+              console.log("[reCAPTCHA] expired — clearing");
+              clearRecaptcha();
+            },
           },
         );
-        await recaptchaVerifier.render();
+
+        await w.recaptchaVerifier.render();
+        const appVerifier = w.recaptchaVerifier;
         const result = await signInWithPhoneNumberFn(
           firebaseAuth,
-          internationalPhone,
-          recaptchaVerifier,
+          formattedPhone,
+          appVerifier,
         );
         setConfirmationResult(result);
       }
@@ -200,15 +231,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (e: any) {
       logger.error("[AuthContext] sendOTP error:", e);
+      console.log("[Firebase Auth] error code:", e?.code, "message:", e?.message);
+      if (e.code === "auth/invalid-app-credential") {
+        return { success: false, message: "مشكلة في اعتماد التطبيق أو reCAPTCHA." };
+      }
+      if (e.code === "auth/captcha-check-failed") {
+        return { success: false, message: "فشل التحقق، أعد المحاولة." };
+      }
       if (e.code === "auth/too-many-requests") {
-        return {
-          success: false,
-          message: "تم تجاوز الحد المسموح، حاول لاحقاً",
-          blocked: true,
-        };
+        return { success: false, message: "محاولات كثيرة، انتظر قليلاً.", blocked: true };
       }
       if (e.code === "auth/invalid-phone-number") {
-        return { success: false, message: "رقم الهاتف غير صحيح" };
+        return { success: false, message: "رقم الهاتف غير صحيح." };
       }
       return { success: false, message: "فشل إرسال رمز التحقق" };
     }
