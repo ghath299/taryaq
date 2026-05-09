@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "5-taS1Kj6077Q1_p9xFyk"
@@ -60,3 +59,9 @@ id = "aIkVdNYom-3JfXnxcKmpQ"
 uri = "file://artifacts/mobile/assets/images/water-glass.png"
 type = "image"
 title = "water glass with leaves"
+
+[[outputs]]
+id = "Rp74jawZEz7xxVvhknKbt"
+uri = "file://taryaq-project.tar.gz"
+type = "unspecified"
+title = "ترياق — المشروع كامل (بدون node_modules)"
