@@ -145,7 +145,11 @@ export default function OTPScreen() {
     const result = await verifyOTP(code, inputDurationMs);
     setIsLoading(false);
     if (result.success) {
-      router.replace("/(tabs)");
+      if (result.needsProfile) {
+        router.replace("/(auth)/complete-profile");
+      } else {
+        router.replace("/(tabs)");
+      }
     } else {
       setErrorMsg(result.message || "رمز التحقق غير صحيح");
       triggerShake();
@@ -341,7 +345,7 @@ export default function OTPScreen() {
                 textAlign: "right",
               }}
             >
-              تحقق من رسائل SMS على رقمك العراقي
+              تحقق من رسائل SMS   
             </ThemedText>
           </Animated.View>
 

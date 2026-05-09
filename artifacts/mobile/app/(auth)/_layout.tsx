@@ -31,6 +31,7 @@ export default function AuthLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="location" />
         <Stack.Screen name="otp" />
+        <Stack.Screen name="complete-profile" />
       </Stack>
     </>
   );

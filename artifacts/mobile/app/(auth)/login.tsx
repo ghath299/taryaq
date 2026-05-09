@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   View,
   TextInput,
@@ -16,7 +16,7 @@ import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
-import { Spacing, BorderRadius } from "@/constants/colors";
+import { Spacing } from "@/constants/colors";
 
 const lightIllustration = require("@/assets/images/doctor-consultation-light.jpeg");
 const darkIllustration = require("@/assets/images/doctor-consultation-dark.jpeg");
@@ -26,35 +26,27 @@ export default function LoginScreen() {
   const { theme, isDark } = useTheme();
   const { login } = useAuth();
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
+
   const [phoneNumber, setPhoneNumber] = useState("");
   const [website, setWebsite] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({ name: "", phone: "" });
-  const phoneRef = useRef<TextInput>(null);
-
-  const validateName = (value: string) => {
-    const words = value.trim().split(/\s+/).filter((w) => w.length > 1);
-    if (words.length < 2) return "الرجاء إدخال الاسم الثلاثي على الأقل";
-    return "";
-  };
+  const [phoneError, setPhoneError] = useState("");
 
   const validatePhone = (value: string) => {
-    if (!/^07[3-9]\d{8}$/.test(value)) return "رقم الهاتف العراقي غير صحيح";
+    if (!/^07[3-9]\d{8}$/.test(value)) return "رقم الهاتف غير صحيح";
     return "";
   };
 
   const handleSubmit = async () => {
-    const nameErr = validateName(fullName);
-    const phoneErr = validatePhone(phoneNumber);
-    setErrors({ name: nameErr, phone: phoneErr });
-    if (nameErr || phoneErr) return;
+    const error = validatePhone(phoneNumber);
+    setPhoneError(error);
+    if (error) return;
 
     setIsLoading(true);
     try {
-      await login(fullName.trim(), phoneNumber.trim(), website);
+      await login("", phoneNumber.trim(), website);
       router.replace("/(auth)/location");
-    } catch (e) {
+    } catch {
       Alert.alert("خطأ", "حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى.");
     } finally {
       setIsLoading(false);
@@ -69,174 +61,155 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: screenBg }}>
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: screenBg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={[
-          styles.container,
-          { paddingTop: Platform.OS === "web" ? 64 : 24, paddingBottom: insets.bottom + 24 },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: screenBg }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Animated.View entering={FadeIn.duration(500)} style={styles.headerSection}>
-          <View style={styles.titleRow}>
-            <ThemedText
-              style={[styles.appName, { color: titleColor, fontFamily: "Cairo-Regular" }]}
-            >
-              ترياق
-            </ThemedText>
-            <ThemedText style={styles.leafEmoji}>🌿</ThemedText>
-          </View>
-          <ThemedText
-            style={[
-              styles.tagline,
-              { color: isDark ? "#8B95A5" : "#9BA5B5", fontFamily: "Cairo-Regular" },
-            ]}
-          >
-            رفيقك نحو صحة أفضل
-          </ThemedText>
-        </Animated.View>
-
-        <Animated.View entering={FadeIn.delay(150).duration(600)} style={styles.illustrationWrapper}>
-          <Image
-            source={isDark ? darkIllustration : lightIllustration}
-            style={styles.illustration}
-            contentFit="contain"
-            priority="high"
-            cachePolicy="memory-disk"
-          />
-        </Animated.View>
-
-        <View style={styles.welcomeBlock}>
-          <View style={styles.welcomeRow}>
-            <ThemedText style={[styles.welcomeSmall, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
-              أهلاً وسهلاً بك في ترياق
-            </ThemedText>
-            <ThemedText style={styles.welcomeLeaf}>🌿</ThemedText>
-          </View>
-          <ThemedText style={[styles.welcomeBig, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
-            سجّل دخولك للمتابعة
-          </ThemedText>
-        </View>
-
-        <View style={styles.form}>
-          <View style={styles.fieldGroup}>
-            <TextInput
-              value={fullName}
-              onChangeText={(t) => {
-                setFullName(t);
-                setErrors((e) => ({ ...e, name: "" }));
-              }}
-              placeholder="الاسم الثلاثي"
-              placeholderTextColor={isDark ? "#6C757D" : "#A0A8B5"}
-              returnKeyType="next"
-              onSubmitEditing={() => phoneRef.current?.focus()}
-              style={[
-                styles.input,
-                {
-                  backgroundColor: inputBg,
-                  borderColor: errors.name ? theme.error : inputBorder,
-                  color: theme.text,
-                  fontFamily: "Cairo-Regular",
-                },
-              ]}
-              textAlign="right"
-            />
-            {errors.name ? (
-              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "Cairo-Regular" }]}>
-                {errors.name}
+        <ScrollView
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: Platform.OS === "web" ? 64 : 24,
+              paddingBottom: insets.bottom + 24,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View entering={FadeIn.duration(500)} style={styles.headerSection}>
+            <View style={styles.titleRow}>
+              <ThemedText style={[styles.appName, { color: titleColor, fontFamily: "Cairo-Regular" }]}>
+                تريـاق
               </ThemedText>
-            ) : null}
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <View
-              style={[
-                styles.input,
-                styles.phoneRow,
-                {
-                  backgroundColor: inputBg,
-                  borderColor: errors.phone ? theme.error : inputBorder,
-                },
-              ]}
-            >
-              <TextInput
-                ref={phoneRef}
-                value={phoneNumber}
-                onChangeText={(t) => {
-                  setPhoneNumber(t.replace(/[^0-9]/g, ""));
-                  setErrors((e) => ({ ...e, phone: "" }));
-                }}
-                placeholder="رقم الهاتف"
-                placeholderTextColor={isDark ? "#6C757D" : "#A0A8B5"}
-                keyboardType="phone-pad"
-                maxLength={11}
-                returnKeyType="done"
-                onSubmitEditing={handleSubmit}
-                style={[
-                  styles.phoneInput,
-                  { color: theme.text, fontFamily: "Cairo-Regular" },
-                ]}
-                textAlign="right"
-              />
-              <View style={styles.phoneDivider} />
-              <ThemedText
-                style={[styles.phonePrefix, { color: theme.text, fontFamily: "Cairo-Regular" }]}
-              >
-                +964
-              </ThemedText>
+              <ThemedText style={styles.leafEmoji}>⚕️</ThemedText>
             </View>
-            {errors.phone ? (
-              <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "Cairo-Regular" }]}>
-                {errors.phone}
+
+            <ThemedText
+              style={[
+                styles.tagline,
+                { color: isDark ? "#8B95A5" : "#9BA5B5", fontFamily: "Cairo-Regular" },
+              ]}
+            >
+              رفيقك نحو صحة أفضل
+            </ThemedText>
+          </Animated.View>
+
+          <Animated.View entering={FadeIn.delay(150).duration(600)} style={styles.illustrationWrapper}>
+            <Image
+              source={isDark ? darkIllustration : lightIllustration}
+              style={styles.illustration}
+              contentFit="contain"
+              priority="high"
+              cachePolicy="memory-disk"
+            />
+          </Animated.View>
+
+          <View style={styles.welcomeBlock}>
+            <View style={styles.welcomeRow}>
+              <ThemedText style={[styles.welcomeSmall, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
+                أهلاً وسهلاً بك في تريـاق
               </ThemedText>
-            ) : null}
+              <ThemedText style={styles.welcomeLeaf}>🌿</ThemedText>
+            </View>
+
+            <ThemedText style={[styles.welcomeBig, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
+              أدخل رقم هاتفك للمتابعة
+            </ThemedText>
           </View>
 
-          <TextInput
-            value={website}
-            onChangeText={setWebsite}
-            autoComplete="off"
-            autoCorrect={false}
-            importantForAutofill="no"
-            accessible={false}
-            accessibilityElementsHidden
-            style={styles.honeypot}
-            pointerEvents="none"
-          />
+          <View style={styles.form}>
+            <View style={styles.fieldGroup}>
+              <View
+                style={[
+                  styles.input,
+                  styles.phoneRow,
+                  {
+                    backgroundColor: inputBg,
+                    borderColor: phoneError ? theme.error : inputBorder,
+                  },
+                ]}
+              >
+                <TextInput
+                  value={phoneNumber}
+                  onChangeText={(t) => {
+                    setPhoneNumber(t.replace(/[^0-9]/g, ""));
+                    setPhoneError("");
+                  }}
+                  placeholder="رقم الهاتف"
+                  placeholderTextColor={isDark ? "#6C757D" : "#A0A8B5"}
+                  keyboardType="phone-pad"
+                  maxLength={11}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  style={[
+                    styles.phoneInput,
+                    { color: theme.text, fontFamily: "Cairo-Regular" },
+                  ]}
+                  textAlign="right"
+                />
 
-          <Pressable
-            onPress={handleSubmit}
-            disabled={isLoading}
-            style={({ pressed }) => [
-              styles.submitButton,
-              {
-                backgroundColor: buttonColor,
-                opacity: isLoading ? 0.7 : pressed ? 0.9 : 1,
-              },
-            ]}
-          >
-            <ThemedText style={[styles.submitText, { fontFamily: "Cairo-Regular" }]}>
-              {isLoading ? "جاري المتابعة..." : "متابعة"}
+                <View style={styles.phoneDivider} />
+
+                <ThemedText style={[styles.phonePrefix, { color: theme.text, fontFamily: "Cairo-Regular" }]}>
+                  +964
+                </ThemedText>
+              </View>
+
+              {phoneError ? (
+                <ThemedText style={[styles.errorText, { color: theme.error, fontFamily: "Cairo-Regular" }]}>
+                  {phoneError}
+                </ThemedText>
+              ) : null}
+            </View>
+
+            <TextInput
+              value={website}
+              onChangeText={setWebsite}
+              autoComplete="off"
+              autoCorrect={false}
+              importantForAutofill="no"
+              accessible={false}
+              accessibilityElementsHidden
+              style={styles.honeypot}
+              pointerEvents="none"
+            />
+
+            <Pressable
+              onPress={handleSubmit}
+              disabled={isLoading}
+              style={({ pressed }) => [
+                styles.submitButton,
+                {
+                  backgroundColor: buttonColor,
+                  opacity: isLoading ? 0.7 : pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <ThemedText style={[styles.submitText, { fontFamily: "Cairo-Regular" }]}>
+                {isLoading ? "جاري المتابعة..." : "متابعة"}
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          <View style={styles.footer}>
+            <ThemedText
+              style={[
+                styles.footerText,
+                { color: isDark ? "#6C757D" : "#9BA5B5", fontFamily: "Cairo-Regular" },
+              ]}
+            >
+              بالمتابعة، أنت توافق على{" "}
+              <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>
+                الشروط والأحكام
+              </ThemedText>
+              {" "}و{" "}
+              <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>
+                سياسة الخصوصية
+              </ThemedText>
             </ThemedText>
-          </Pressable>
-        </View>
-
-        <View style={styles.footer}>
-          <ThemedText
-            style={[styles.footerText, { color: isDark ? "#6C757D" : "#9BA5B5", fontFamily: "Cairo-Regular" }]}
-          >
-            بالمتابعة، أنت توافق على{" "}
-            <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>الشروط والأحكام</ThemedText>
-            {" "}و{" "}
-            <ThemedText style={{ color: titleColor, fontFamily: "Cairo-Regular" }}>سياسة الخصوصية</ThemedText>
-          </ThemedText>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

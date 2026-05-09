@@ -27,6 +27,7 @@ export interface AuthUser {
   locationGranted: boolean;
   isVerified: boolean;
   avatarUri?: string;
+  profileComplete?: boolean;
 }
 
 interface OTPResult {
@@ -35,16 +36,17 @@ interface OTPResult {
   attemptsRemaining?: number;
   blocked?: boolean;
   expired?: boolean;
+  needsProfile?: boolean;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  authStep: "login" | "location" | "otp" | "complete";
+  authStep: "login" | "location" | "otp" | "complete-profile" | "complete";
   pendingPhone: string;
   setUser: (user: AuthUser | null) => void;
-  setAuthStep: (step: "login" | "location" | "otp" | "complete") => void;
+  setAuthStep: (step: "login" | "location" | "otp" | "complete-profile" | "complete") => void;
   setPendingPhone: (phone: string) => void;
   login: (fullName: string, phoneNumber: string, honeypot?: string) => Promise<void>;
   verifyOTP: (code: string, inputDurationMs?: number) => Promise<OTPResult>;
@@ -52,6 +54,7 @@ interface AuthContextType {
   sendOTPAndProceed: () => Promise<OTPResult>;
   otpSentAt: number;
   setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
+  completeProfile: (name: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -92,7 +95,7 @@ function clearRecaptcha() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete">("login");
+  const [authStep, setAuthStep] = useState<"login" | "location" | "otp" | "complete-profile" | "complete">("login");
   const [pendingPhone, setPendingPhone] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [pendingHoneypot, setPendingHoneypot] = useState("");
@@ -118,7 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await clearTokens();
         } else {
           setUser(parsed);
-          if (parsed.role && parsed.isVerified && parsed.locationGranted) {
+          if (parsed.isVerified && parsed.profileComplete === false) {
+            setAuthStep("complete-profile");
+          } else if (parsed.role && parsed.isVerified && parsed.locationGranted) {
             setAuthStep("complete");
           }
         }
@@ -319,43 +324,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return "patient";
   };
 
-  const finalizeLogin = async (phoneNumber: string) => {
+  function hasValidSavedName(name?: string): boolean {
+    if (!name || !name.trim()) return false;
+    const words = name.trim().split(/\s+/).filter((w) => w.length >= 2);
+    return words.length >= 3;
+  }
+
+  const finalizeLogin = async (phoneNumber: string): Promise<boolean> => {
     const role = await fetchUserRole(phoneNumber);
     try {
       const savedProfile = await getUserProfile(phoneNumber);
+      const savedName = savedProfile?.name?.trim() ?? "";
+      const hasName = hasValidSavedName(savedName);
 
-      const fbUser = await saveUserToFirebase({
-        phone: phoneNumber,
-        name: savedProfile?.name || user?.fullName || pendingName,
-      });
-
-      setUser((currentUser) => {
-        if (currentUser) {
-          const updatedUser = {
-            ...currentUser,
-            id: fbUser.id,
-            isVerified: true,
-            role,
-            fullName: savedProfile?.name || currentUser.fullName,
-            avatarUri: savedProfile?.avatarUri || currentUser.avatarUri,
-          };
-          saveAuthState(updatedUser);
-          return updatedUser;
-        }
-        return currentUser;
-      });
+      if (hasName) {
+        const fbUser = await saveUserToFirebase({ phone: phoneNumber, name: savedName });
+        setUser((currentUser) => {
+          if (currentUser) {
+            const updatedUser = {
+              ...currentUser,
+              id: fbUser.id,
+              isVerified: true,
+              role,
+              fullName: savedName,
+              profileComplete: true,
+              avatarUri: savedProfile?.avatarUri || currentUser.avatarUri,
+            };
+            saveAuthState(updatedUser);
+            return updatedUser;
+          }
+          return currentUser;
+        });
+        setAuthStep("complete");
+        return false;
+      } else {
+        const fbUser = await saveUserToFirebase({
+          phone: phoneNumber,
+          name: user?.fullName || pendingName || "",
+        });
+        setUser((currentUser) => {
+          if (currentUser) {
+            const updatedUser = {
+              ...currentUser,
+              id: fbUser.id,
+              isVerified: true,
+              role,
+              profileComplete: false,
+            };
+            saveAuthState(updatedUser);
+            return updatedUser;
+          }
+          return currentUser;
+        });
+        setAuthStep("complete-profile");
+        return true;
+      }
     } catch (e) {
-      logger.error("[AuthContext] Failed to save user to Firebase:", e);
+      logger.error("[AuthContext] Failed during finalizeLogin:", e);
       setUser((currentUser) => {
         if (currentUser) {
-          const updatedUser = { ...currentUser, isVerified: true, role };
+          const updatedUser = { ...currentUser, isVerified: true, role, profileComplete: false };
           saveAuthState(updatedUser);
           return updatedUser;
         }
         return currentUser;
       });
+      setAuthStep("complete-profile");
+      return true;
     }
-    setAuthStep("complete");
   };
 
   const verifyOTP = async (code: string, inputDurationMs: number = 9999): Promise<OTPResult> => {
@@ -420,8 +456,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        await finalizeLogin(phoneNumber);
-        return { success: true };
+        const needsProfile = await finalizeLogin(phoneNumber);
+        return { success: true, needsProfile };
       } catch (e: any) {
         logger.error("[AuthContext] Firebase verifyOTP error:", e);
         if (e.code === "auth/invalid-verification-code") {
@@ -439,6 +475,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return { success: false, message: "يرجى استخدام الويب للاختبار الآن" };
+  };
+
+  const completeProfile = async (name: string): Promise<void> => {
+    const phoneNumber = user?.phoneNumber || pendingPhone;
+    try {
+      await saveUserToFirebase({ phone: phoneNumber, name });
+    } catch (e) {
+      logger.error("[AuthContext] completeProfile save failed:", e);
+    }
+    setUser((currentUser) => {
+      if (currentUser) {
+        const updatedUser = { ...currentUser, fullName: name, profileComplete: true };
+        saveAuthState(updatedUser);
+        return updatedUser;
+      }
+      return currentUser;
+    });
+    setAuthStep("complete");
   };
 
   const resendOTP = async (): Promise<OTPResult> => {
@@ -476,7 +530,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user !== null &&
     user.isVerified &&
     user.locationGranted &&
-    user.role !== null;
+    user.role !== null &&
+    user.profileComplete !== false;
 
   return (
     <AuthContext.Provider
@@ -494,6 +549,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         resendOTP,
         sendOTPAndProceed,
         setLocationGranted,
+        completeProfile,
         logout,
         otpSentAt,
       }}

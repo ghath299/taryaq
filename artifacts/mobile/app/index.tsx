@@ -19,6 +19,7 @@ export default function Index() {
     return <Redirect href="/(tabs)" />;
   }
 
+  if (authStep === "complete-profile") return <Redirect href="/(auth)/complete-profile" />;
   if (authStep === "otp") return <Redirect href="/(auth)/otp" />;
   if (authStep === "location") return <Redirect href="/(auth)/location" />;
   return <Redirect href="/(auth)/login" />;
