@@ -8,7 +8,6 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
-import { saveUser as saveUserToFirebase, getUserProfile } from "@/lib/firebase-data";
 import {
   saveTokens,
   clearTokens,
@@ -37,6 +36,14 @@ interface OTPResult {
   blocked?: boolean;
   expired?: boolean;
   needsProfile?: boolean;
+}
+
+interface PgUser {
+  id: string;
+  phone: string;
+  fullName: string | null;
+  profileImageUrl: string | null;
+  role: string;
 }
 
 interface AuthContextType {
@@ -310,80 +317,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result;
   };
 
-  const fetchUserRole = async (phoneNumber: string): Promise<UserRole> => {
-    try {
-      const apiUrl = getApiUrl();
-      const response = await fetch(`${apiUrl}/api/users/role/${phoneNumber}`);
-      if (response.ok) {
-        const data = (await response.json()) as { role?: UserRole };
-        return data.role || "patient";
-      }
-    } catch {
-      logger.log("[AuthContext] Could not fetch role");
-    }
-    return "patient";
-  };
-
-  function hasValidSavedName(name?: string): boolean {
-    if (!name || !name.trim()) return false;
-    const words = name.trim().split(/\s+/).filter((w) => w.length >= 2);
-    return words.length >= 3;
-  }
-
-  const finalizeLogin = async (phoneNumber: string): Promise<boolean> => {
-    const role = await fetchUserRole(phoneNumber);
-    try {
-      const savedProfile = await getUserProfile(phoneNumber);
-      const savedName = savedProfile?.name?.trim() ?? "";
-      const hasName = hasValidSavedName(savedName);
-
-      if (hasName) {
-        const fbUser = await saveUserToFirebase({ phone: phoneNumber, name: savedName });
-        setUser((currentUser) => {
-          if (currentUser) {
-            const updatedUser = {
-              ...currentUser,
-              id: fbUser.id,
-              isVerified: true,
-              role,
-              fullName: savedName,
-              profileComplete: true,
-              avatarUri: savedProfile?.avatarUri || currentUser.avatarUri,
-            };
-            saveAuthState(updatedUser);
-            return updatedUser;
-          }
-          return currentUser;
-        });
-        setAuthStep("complete");
-        return false;
-      } else {
-        const fbUser = await saveUserToFirebase({
-          phone: phoneNumber,
-          name: user?.fullName || pendingName || "",
-        });
-        setUser((currentUser) => {
-          if (currentUser) {
-            const updatedUser = {
-              ...currentUser,
-              id: fbUser.id,
-              isVerified: true,
-              role,
-              profileComplete: false,
-            };
-            saveAuthState(updatedUser);
-            return updatedUser;
-          }
-          return currentUser;
-        });
-        setAuthStep("complete-profile");
-        return true;
-      }
-    } catch (e) {
-      logger.error("[AuthContext] Failed during finalizeLogin:", e);
+  const finalizeLogin = async (
+    phoneNumber: string,
+    isNewUser: boolean,
+    pgUser: PgUser | null,
+  ): Promise<boolean> => {
+    if (!isNewUser && pgUser) {
       setUser((currentUser) => {
         if (currentUser) {
-          const updatedUser = { ...currentUser, isVerified: true, role, profileComplete: false };
+          const updatedUser = {
+            ...currentUser,
+            id: pgUser.id,
+            isVerified: true,
+            role: (pgUser.role as UserRole) || "patient",
+            fullName: pgUser.fullName || currentUser.fullName,
+            profileComplete: true,
+            avatarUri: pgUser.profileImageUrl || currentUser.avatarUri,
+          };
+          saveAuthState(updatedUser);
+          return updatedUser;
+        }
+        return currentUser;
+      });
+      setAuthStep("complete");
+      return false;
+    } else {
+      setUser((currentUser) => {
+        if (currentUser) {
+          const updatedUser = {
+            ...currentUser,
+            isVerified: true,
+            role: "patient" as UserRole,
+            profileComplete: false,
+          };
           saveAuthState(updatedUser);
           return updatedUser;
         }
@@ -430,6 +396,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           refreshToken?: string;
           accessExpiresAt?: number;
           refreshExpiresAt?: number;
+          isNewUser?: boolean;
+          user?: PgUser | null;
         };
 
         if (!res.ok || !data.success) {
@@ -456,7 +424,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        const needsProfile = await finalizeLogin(phoneNumber);
+        const needsProfile = await finalizeLogin(
+          phoneNumber,
+          data.isNewUser ?? true,
+          data.user ?? null,
+        );
         return { success: true, needsProfile };
       } catch (e: any) {
         logger.error("[AuthContext] Firebase verifyOTP error:", e);
@@ -480,9 +452,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeProfile = async (name: string): Promise<void> => {
     const phoneNumber = user?.phoneNumber || pendingPhone;
     try {
-      await saveUserToFirebase({ phone: phoneNumber, name });
+      const apiUrl = getApiUrl();
+      const token = await getValidAccessToken();
+      const res = await fetch(`${apiUrl}/api/users/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ phone: phoneNumber, fullName: name }),
+      });
+      if (res.ok) {
+        const pgUser = (await res.json()) as PgUser;
+        setUser((currentUser) => {
+          if (currentUser) {
+            const updatedUser = {
+              ...currentUser,
+              id: pgUser.id,
+              fullName: pgUser.fullName || name,
+              profileComplete: true,
+              role: (pgUser.role as UserRole) || "patient",
+            };
+            saveAuthState(updatedUser);
+            return updatedUser;
+          }
+          return currentUser;
+        });
+        setAuthStep("complete");
+        return;
+      }
+      logger.error("[AuthContext] completeProfile API returned:", res.status);
     } catch (e) {
-      logger.error("[AuthContext] completeProfile save failed:", e);
+      logger.error("[AuthContext] completeProfile API failed:", e);
     }
     setUser((currentUser) => {
       if (currentUser) {

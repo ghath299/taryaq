@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomInt } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import {
   issueTokens,
@@ -358,12 +360,24 @@ router.post("/verify-firebase-token", async (req: Request, res: Response) => {
     });
 
     const tokens = await issueTokens(phoneRaw);
+
+    let pgUser: typeof usersTable.$inferSelect | null = null;
+    try {
+      pgUser = (await db.query.usersTable.findFirst({
+        where: eq(usersTable.phone, phoneRaw),
+      })) ?? null;
+    } catch (e) {
+      logger.error({ e }, "Failed to query user from DB after OTP verify");
+    }
+
     res.json({
       success: true,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       accessExpiresAt: tokens.accessExpiresAt,
       refreshExpiresAt: tokens.refreshExpiresAt,
+      isNewUser: pgUser === null,
+      user: pgUser,
     });
   } catch (e) {
     logger.error({ e }, "Firebase token verification failed");

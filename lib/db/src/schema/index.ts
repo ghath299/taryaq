@@ -1,6 +1,4 @@
 import { pgTable, text, timestamp, uuid, jsonb, integer } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
 
 export const usersTable = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -34,27 +32,11 @@ export const medicineOrdersTable = pgTable("medicine_orders", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(usersTable).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertBookingSchema = createInsertSchema(bookingsTable).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertMedicineOrderSchema = createInsertSchema(medicineOrdersTable).omit({
-  id: true,
-  createdAt: true,
-});
-
 export type User = typeof usersTable.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertUser = typeof usersTable.$inferInsert;
 
 export type Booking = typeof bookingsTable.$inferSelect;
-export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type InsertBooking = typeof bookingsTable.$inferInsert;
 
 export type MedicineOrder = typeof medicineOrdersTable.$inferSelect;
-export type InsertMedicineOrder = z.infer<typeof insertMedicineOrderSchema>;
+export type InsertMedicineOrder = typeof medicineOrdersTable.$inferInsert;

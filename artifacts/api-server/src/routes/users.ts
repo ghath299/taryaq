@@ -1,106 +1,91 @@
 import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router = Router();
 
 router.get("/role/:phone", async (req: Request, res: Response) => {
   const { phone } = req.params;
-
-  return res.json({
-    phone,
-    role: "patient",
-  });
+  try {
+    const user = await db.query.usersTable.findFirst({
+      where: eq(usersTable.phone, phone as string),
+    });
+    return res.json({ phone, role: user?.role ?? "patient" });
+  } catch {
+    return res.json({ phone, role: "patient" });
+  }
 });
 
 router.get("/me/:phone", async (req: Request, res: Response) => {
   try {
     const { phone } = req.params;
-
     const user = await db.query.usersTable.findFirst({
-      where: eq(usersTable.phone, phone),
+      where: eq(usersTable.phone, phone as string),
     });
-
     if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "المستخدم غير موجود" });
     }
-
     return res.json(user);
   } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    req.log.error({ error }, "Failed to fetch user profile");
+    return res.status(500).json({ message: "خطأ في الخادم" });
   }
 });
 
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/register", requireAuth, async (req: Request, res: Response) => {
+  const body = req.body as { phone?: string; fullName?: string };
+  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+
+  if (!phone || !fullName) {
+    return res.status(400).json({ message: "phone و fullName مطلوبان" });
+  }
+
   try {
-    const { phone, fullName } = req.body;
-
-    if (!phone) {
-      return res.status(400).json({
-        message: "Phone is required",
-      });
-    }
-
-    let user = await db.query.usersTable.findFirst({
+    const existing = await db.query.usersTable.findFirst({
       where: eq(usersTable.phone, phone),
     });
 
-    if (!user) {
-      const inserted = await db
-        .insert(usersTable)
-        .values({
-          phone,
-          fullName,
-        })
+    if (existing) {
+      const updated = await db
+        .update(usersTable)
+        .set({ fullName, updatedAt: new Date() })
+        .where(eq(usersTable.phone, phone))
         .returning();
-
-      user = inserted[0];
+      return res.json(updated[0]);
     }
 
-    return res.json(user);
+    const inserted = await db
+      .insert(usersTable)
+      .values({ phone, fullName })
+      .returning();
+    return res.json(inserted[0]);
   } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    req.log.error({ error }, "Failed to register user");
+    return res.status(500).json({ message: "خطأ في الخادم" });
   }
 });
 
-router.put("/profile/:id", async (req: Request, res: Response) => {
+router.put("/profile/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { fullName, profileImageUrl } = req.body;
+    const body = req.body as { fullName?: string; profileImageUrl?: string };
+    const { fullName, profileImageUrl } = body;
 
     const updated = await db
       .update(usersTable)
-      .set({
-        fullName,
-        profileImageUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(usersTable.id, id))
+      .set({ fullName, profileImageUrl, updatedAt: new Date() })
+      .where(eq(usersTable.id, id as string))
       .returning();
 
     if (!updated[0]) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "المستخدم غير موجود" });
     }
-
     return res.json(updated[0]);
   } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    req.log.error({ error }, "Failed to update user profile");
+    return res.status(500).json({ message: "خطأ في الخادم" });
   }
 });
 
