@@ -197,25 +197,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await waitForRecaptchaContainer();
 
-        clearRecaptcha();
-
         const w = window as any;
-        w.recaptchaVerifier = new RecaptchaVerifierClass(
-          firebaseAuth,
-          "recaptcha-container",
-          {
-            size: "normal",
-            callback: () => {
-              console.log("[reCAPTCHA] solved ✓");
-            },
-            "expired-callback": () => {
-              console.log("[reCAPTCHA] expired — clearing");
-              clearRecaptcha();
-            },
-          },
-        );
 
-        await w.recaptchaVerifier.render();
+        // أنشئ verifier جديد فقط إذا لم يكن موجوداً
+        if (!w.recaptchaVerifier) {
+          w.recaptchaVerifier = new RecaptchaVerifierClass(
+            firebaseAuth,
+            "recaptcha-container",
+            {
+              size: "normal",
+              callback: () => {
+                console.log("[reCAPTCHA] solved ✓");
+              },
+              "expired-callback": () => {
+                console.log("[reCAPTCHA] expired — clearing");
+                clearRecaptcha();
+              },
+            },
+          );
+          await w.recaptchaVerifier.render();
+        }
+
         const appVerifier = w.recaptchaVerifier;
         const result = await signInWithPhoneNumberFn(
           firebaseAuth,
@@ -236,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, message: "مشكلة في اعتماد التطبيق أو reCAPTCHA." };
       }
       if (e.code === "auth/captcha-check-failed") {
+        if (Platform.OS === "web") clearRecaptcha();
         return { success: false, message: "فشل التحقق، أعد المحاولة." };
       }
       if (e.code === "auth/too-many-requests") {

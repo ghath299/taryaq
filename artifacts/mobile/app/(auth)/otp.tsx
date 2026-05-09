@@ -7,7 +7,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from "react-native";
 import {
   useSafeAreaInsets,
@@ -34,6 +33,16 @@ import { logger } from "@/lib/logger";
 
 const OTP_LENGTH = 6;
 
+const INITIAL_COOLDOWN_MS = 60_000;
+const RATE_LIMIT_COOLDOWN_MS = 15 * 60_000;
+
+function formatCountdown(seconds: number): string {
+  if (seconds <= 60) return `${seconds} ثانية`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export default function OTPScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -43,7 +52,10 @@ export default function OTPScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [countdown, setCountdown] = useState(60);
+  const [cooldownUntil, setCooldownUntil] = useState<number>(
+    () => Date.now() + INITIAL_COOLDOWN_MS,
+  );
+  const [remaining, setRemaining] = useState(Math.ceil(INITIAL_COOLDOWN_MS / 1000));
   const inputs = useRef<Array<TextInput | null>>(Array(OTP_LENGTH).fill(null));
   const shakeX = useSharedValue(0);
 
@@ -54,10 +66,11 @@ export default function OTPScreen() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((c) => (c > 0 ? c - 1 : 0));
+      const secs = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setRemaining(secs);
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [cooldownUntil]);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -142,18 +155,31 @@ export default function OTPScreen() {
   };
 
   const handleResend = async () => {
-    if (countdown > 0) return;
+    if (remaining > 0 || isResending) return;
     setIsResending(true);
     setErrorMsg("");
     const result = await resendOTP();
     setIsResending(false);
     if (result.success) {
-      setCountdown(60);
+      const until = Date.now() + INITIAL_COOLDOWN_MS;
+      setCooldownUntil(until);
+      setRemaining(Math.ceil(INITIAL_COOLDOWN_MS / 1000));
       setOtp(Array(OTP_LENGTH).fill(""));
       inputs.current[0]?.focus();
-      Alert.alert("تم إعادة الإرسال", "تم إرسال رمز تحقق جديد عبر SMS");
     } else {
-      setErrorMsg(result.message || "فشل إعادة الإرسال");
+      const isRateLimited =
+        result.blocked ||
+        (result.message ?? "").includes("محاولات كثيرة") ||
+        (result.message ?? "").includes("تجاوز الحد") ||
+        (result.message ?? "").includes("quota");
+      if (isRateLimited) {
+        const until = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+        setCooldownUntil(until);
+        setRemaining(Math.ceil(RATE_LIMIT_COOLDOWN_MS / 1000));
+        setErrorMsg("تم طلب رموز كثيرة، حاول بعد 15 دقيقة.");
+      } else {
+        setErrorMsg(result.message || "فشل إعادة الإرسال");
+      }
     }
   };
 
@@ -261,14 +287,14 @@ export default function OTPScreen() {
             </Button>
 
             <View style={styles.resendRow}>
-              {countdown > 0 ? (
+              {remaining > 0 ? (
                 <ThemedText type="small" style={{ color: theme.textSecondary }}>
                   إعادة الإرسال بعد{" "}
                   <ThemedText
                     type="small"
                     style={{ color: theme.primary, fontWeight: "700" }}
                   >
-                    {countdown} ثانية
+                    {formatCountdown(remaining)}
                   </ThemedText>
                 </ThemedText>
               ) : (
