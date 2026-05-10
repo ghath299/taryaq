@@ -117,6 +117,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadAuthState();
   }, []);
 
+  const refreshUserFromApi = async (cachedUser: AuthUser): Promise<void> => {
+    if (!cachedUser.phoneNumber) return;
+    try {
+      const apiUrl = getApiUrl();
+      const res = await fetch(`${apiUrl}/api/users/me/${cachedUser.phoneNumber}`);
+      if (!res.ok) return;
+      const pgUser = (await res.json()) as PgUser;
+      const fresh: AuthUser = {
+        ...cachedUser,
+        id: pgUser.id,
+        fullName: pgUser.fullName ?? cachedUser.fullName,
+        avatarUri: pgUser.profileImageUrl ?? undefined,
+        role: (pgUser.role as UserRole) || cachedUser.role,
+        profileComplete: true,
+      };
+      setUser(fresh);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(fresh));
+    } catch (e) {
+      logger.error("[AuthContext] refreshUserFromApi failed:", e);
+    }
+  };
+
   const loadAuthState = async () => {
     try {
       const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
@@ -128,11 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
           await clearTokens();
         } else {
+          // عرض Cache فوراً لتجنب الوميض
           setUser(parsed);
           if (parsed.isVerified && parsed.profileComplete === false) {
             setAuthStep("complete-profile");
           } else if (parsed.role && parsed.isVerified && parsed.locationGranted) {
             setAuthStep("complete");
+          }
+          // جلب البيانات الحقيقية من PostgreSQL في الخلفية
+          if (parsed.isVerified && parsed.phoneNumber && tokensValid) {
+            void refreshUserFromApi(parsed);
           }
         }
       }
