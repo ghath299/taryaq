@@ -4,13 +4,14 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  Image,
   Alert,
   Linking,
   Switch,
   Modal,
   Platform,
 } from "react-native";
+import { Image } from "expo-image";
+import InitialsAvatar from "@/components/InitialsAvatar";
 
 const isWeb = Platform.OS === "web";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -305,14 +306,15 @@ export default function ProfileScreen() {
             >
               <View style={styles.profileTopRow}>
                 <View style={styles.avatarRing}>
-                  <Image
-                    source={
-                      user?.avatarUri
-                        ? { uri: user.avatarUri }
-                        : require("@/assets/images/user-avatar.png")
-                    }
-                    style={styles.profileAvatar}
-                  />
+                  {user?.avatarUri ? (
+                    <Image
+                      source={{ uri: user.avatarUri }}
+                      style={styles.profileAvatar}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <InitialsAvatar name={user?.fullName ?? ""} size={70} />
+                  )}
                   <View style={styles.verifiedDot}>
                     <Feather name="check" size={10} color="#FFF" />
                   </View>

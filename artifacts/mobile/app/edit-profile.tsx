@@ -4,7 +4,6 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  Image,
   TextInput,
   Alert,
   Platform,
@@ -12,42 +11,34 @@ import {
 } from "react-native";
 
 const isWeb = Platform.OS === "web";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { Stack, useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import ImageEditorModal from "@/components/ImageEditorModal";
+import InitialsAvatar from "@/components/InitialsAvatar";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
-import { updateUserProfile } from "@/lib/firebase-data";
-import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
+import { authFetch } from "@/lib/auth-tokens";
+import { getApiUrl } from "@/lib/query-client";
+import { uploadAvatar, deleteAvatar } from "@/lib/firebase-storage";
+import { Spacing, BorderRadius } from "@/constants/colors";
 
 const BRAND_BLUE_DEEP = "#1F40C8";
 const BRAND_BLUE = "#2A4FCC";
 const BANNER_CYAN = "#5CC4E6";
-const AUTH_STORAGE_KEY = "@taryaq_auth";
-
-const PRESET_AVATARS = [
-  require("@/assets/images/user-avatar.png"),
-  require("@/assets/images/doctor-ahmed.png"),
-  require("@/assets/images/doctor-ali.png"),
-  require("@/assets/images/doctor-sara.png"),
-];
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { user, setUser } = useAuth();
+  const { user, updateUser } = useAuth();
 
   const [name, setName] = useState(user?.fullName ?? "");
-  const [avatarUri, setAvatarUri] = useState<string | undefined>(user?.avatarUri);
-  const [presetIndex, setPresetIndex] = useState<number | null>(
-    user?.avatarUri ? null : 0,
-  );
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editorUri, setEditorUri] = useState<string | null>(null);
 
@@ -74,14 +65,9 @@ export default function EditProfileScreen() {
       if (!result.canceled && result.assets[0]) {
         setEditorUri(result.assets[0].uri);
       }
-    } catch (e) {
+    } catch {
       Alert.alert("خطأ", "تعذّر اختيار الصورة");
     }
-  };
-
-  const selectPreset = (idx: number) => {
-    setPresetIndex(idx);
-    setAvatarUri(undefined);
   };
 
   const handleSave = async () => {
@@ -90,34 +76,58 @@ export default function EditProfileScreen() {
       Alert.alert("تنبيه", "الاسم يجب أن يكون حرفين على الأقل");
       return;
     }
-    if (!user) return;
+    if (!user?.id) {
+      Alert.alert("خطأ", "تعذّر تحديد هوية المستخدم");
+      return;
+    }
+
     setSaving(true);
     try {
-      // حفظ في Firebase أولاً
-      await updateUserProfile({
-        phone: user.phoneNumber,
-        name: trimmed,
-        avatarUri: avatarUri ?? null,
+      let profileImageUrl: string | undefined = user.avatarUri;
+
+      if (localImageUri) {
+        if (user.avatarUri) {
+          await deleteAvatar(user.avatarUri);
+        }
+        profileImageUrl = await uploadAvatar(user.id, localImageUri);
+      }
+
+      const apiUrl = getApiUrl();
+      const res = await authFetch(`${apiUrl}/api/users/profile/${user.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          fullName: trimmed,
+          profileImageUrl: profileImageUrl ?? null,
+        }),
       });
 
-      // تحديث الحالة المحلية
-      const updated = {
-        ...user,
-        fullName: trimmed,
-        avatarUri: avatarUri,
+      if (!res.ok) {
+        const err = (await res.json()) as { message?: string };
+        Alert.alert("خطأ", err.message ?? "تعذّر حفظ التغييرات");
+        return;
+      }
+
+      const updated = (await res.json()) as {
+        id: string;
+        fullName: string | null;
+        profileImageUrl: string | null;
       };
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
-      setUser(updated);
+
+      await updateUser({
+        fullName: updated.fullName ?? trimmed,
+        avatarUri: updated.profileImageUrl ?? undefined,
+      });
+
       router.back();
-    } catch (e) {
-      Alert.alert("خطأ", "تعذّر حفظ التغييرات");
+    } catch {
+      Alert.alert("خطأ", "تعذّر حفظ التغييرات، تحقق من الاتصال");
     } finally {
       setSaving(false);
     }
   };
 
-  const showingPresetSrc =
-    presetIndex !== null && !avatarUri ? PRESET_AVATARS[presetIndex] : null;
+  const previewUri = localImageUri ?? user?.avatarUri;
+  const displayName = name.trim() || user?.fullName || "";
 
   return (
     <>
@@ -158,11 +168,23 @@ export default function EditProfileScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.headerCard}
             >
-              <Pressable onPress={pickImage} style={styles.avatarRing} accessibilityLabel="تغيير الصورة">
-                {avatarUri ? (
-                  <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
+              <Pressable
+                onPress={pickImage}
+                style={styles.avatarRing}
+                accessibilityLabel="تغيير الصورة"
+              >
+                {previewUri ? (
+                  <Image
+                    source={{ uri: previewUri }}
+                    style={styles.avatarImg}
+                    contentFit="cover"
+                  />
                 ) : (
-                  <Image source={showingPresetSrc ?? PRESET_AVATARS[0]} style={styles.avatarImg} />
+                  <InitialsAvatar
+                    name={displayName}
+                    size={102}
+                    style={styles.avatarImg}
+                  />
                 )}
                 <View style={styles.cameraBadge}>
                   <Feather name="camera" size={14} color="#FFF" />
@@ -175,11 +197,22 @@ export default function EditProfileScreen() {
           </Animated.View>
 
           {/* Name input */}
-          <Animated.View entering={FadeInUp.delay(160).duration(380)} style={styles.sectionWrap}>
-            <ThemedText type="small" style={[styles.sectionTitle, { color: textSecondary }]}>
+          <Animated.View
+            entering={FadeInUp.delay(160).duration(380)}
+            style={styles.sectionWrap}
+          >
+            <ThemedText
+              type="small"
+              style={[styles.sectionTitle, { color: textSecondary }]}
+            >
               الاسم الكامل
             </ThemedText>
-            <View style={[styles.inputCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
+            <View
+              style={[
+                styles.inputCard,
+                { backgroundColor: cardBg, borderColor: subtleBorder },
+              ]}
+            >
               <Feather name="user" size={18} color={textSecondary} />
               <TextInput
                 value={name}
@@ -193,13 +226,19 @@ export default function EditProfileScreen() {
                 maxLength={50}
               />
             </View>
-            <ThemedText type="caption" style={[styles.helperText, { color: textSecondary }]}>
+            <ThemedText
+              type="caption"
+              style={[styles.helperText, { color: textSecondary }]}
+            >
               من حرفين إلى 50 حرف
             </ThemedText>
           </Animated.View>
 
-          {/* Save button */}
-          <Animated.View entering={FadeInUp.delay(220).duration(380)} style={styles.saveWrap}>
+          {/* Save / Cancel buttons */}
+          <Animated.View
+            entering={FadeInUp.delay(220).duration(380)}
+            style={styles.saveWrap}
+          >
             <Pressable
               onPress={handleSave}
               disabled={saving}
@@ -231,19 +270,22 @@ export default function EditProfileScreen() {
               onPress={() => router.back()}
               style={[styles.cancelBtn, { borderColor: subtleBorder }]}
             >
-              <ThemedText type="body" style={{ color: textSecondary, fontWeight: "600" }}>
+              <ThemedText
+                type="body"
+                style={{ color: textSecondary, fontWeight: "600" }}
+              >
                 إلغاء
               </ThemedText>
             </Pressable>
           </Animated.View>
         </ScrollView>
+
         <ImageEditorModal
           visible={editorUri !== null}
           uri={editorUri}
           onCancel={() => setEditorUri(null)}
           onDone={(croppedUri) => {
-            setAvatarUri(croppedUri);
-            setPresetIndex(null);
+            setLocalImageUri(croppedUri);
             setEditorUri(null);
           }}
         />
@@ -263,8 +305,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.lg,
   },
   closeBtn: {
-    width: 40, height: 40, borderRadius: 20, borderWidth: 1,
-    alignItems: "center", justifyContent: "center",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   topTitle: { fontWeight: "800", fontSize: 18 },
   headerWrap: { paddingHorizontal: Spacing.xl },
@@ -275,18 +321,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarRing: {
-    width: 110, height: 110, borderRadius: 55,
-    borderWidth: 4, borderColor: "rgba(255,255,255,0.7)",
-    alignItems: "center", justifyContent: "center",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 4,
+    borderColor: "rgba(255,255,255,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
     position: "relative",
+    overflow: "hidden",
   },
   avatarImg: { width: 102, height: 102, borderRadius: 51 },
   cameraBadge: {
-    position: "absolute", bottom: 0, left: -2,
-    width: 32, height: 32, borderRadius: 16,
+    position: "absolute",
+    bottom: 0,
+    left: -2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: BRAND_BLUE_DEEP,
-    borderWidth: 3, borderColor: "#FFF",
-    alignItems: "center", justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#FFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerHint: {
     color: "rgba(255,255,255,0.92)",

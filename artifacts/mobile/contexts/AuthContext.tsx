@@ -62,11 +62,12 @@ interface AuthContextType {
   otpSentAt: number;
   setLocationGranted: (coords?: { lat: number; lng: number; province: string }) => Promise<void>;
   completeProfile: (name: string) => Promise<void>;
+  updateUser: (updates: Partial<AuthUser>) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const AUTH_STORAGE_KEY = "@taryaq_auth";
+export const AUTH_STORAGE_KEY = "@taryaq_auth";
 
 let firebaseAuth: any = null;
 let signInWithPhoneNumberFn: any = null;
@@ -202,27 +203,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web") {
         const formattedPhone = formatToE164(phoneNumber);
 
-        console.log("[Firebase Auth] projectId:", firebaseAuth?.app?.options?.projectId);
-        console.log("[Firebase Auth] authDomain:", firebaseAuth?.app?.options?.authDomain);
-        console.log("[Firebase Auth] hostname:", window.location.hostname);
-        console.log("[Firebase Auth] formattedPhone:", formattedPhone);
-
         await waitForRecaptchaContainer();
 
         const w = window as any;
 
-        // أنشئ verifier جديد فقط إذا لم يكن موجوداً
         if (!w.recaptchaVerifier) {
           w.recaptchaVerifier = new RecaptchaVerifierClass(
             firebaseAuth,
             "recaptcha-container",
             {
               size: "normal",
-              callback: () => {
-                console.log("[reCAPTCHA] solved ✓");
-              },
+              callback: () => {},
               "expired-callback": () => {
-                console.log("[reCAPTCHA] expired — clearing");
                 clearRecaptcha();
               },
             },
@@ -245,7 +237,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (e: any) {
       logger.error("[AuthContext] sendOTP error:", e);
-      console.log("[Firebase Auth] error code:", e?.code, "message:", e?.message);
       if (e.code === "auth/invalid-app-credential") {
         return { success: false, message: "مشكلة في اعتماد التطبيق أو reCAPTCHA." };
       }
@@ -332,7 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             role: (pgUser.role as UserRole) || "patient",
             fullName: pgUser.fullName || currentUser.fullName,
             profileComplete: true,
-            avatarUri: pgUser.profileImageUrl || currentUser.avatarUri,
+            avatarUri: pgUser.profileImageUrl ?? undefined,
           };
           saveAuthState(updatedUser);
           return updatedUser;
@@ -496,6 +487,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthStep("complete");
   };
 
+  const updateUser = async (updates: Partial<AuthUser>): Promise<void> => {
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser;
+      const updatedUser = { ...currentUser, ...updates };
+      saveAuthState(updatedUser);
+      return updatedUser;
+    });
+  };
+
   const resendOTP = async (): Promise<OTPResult> => {
     const phoneNumber = user?.phoneNumber || pendingPhone;
     const fullName = user?.fullName || pendingName;
@@ -551,6 +551,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sendOTPAndProceed,
         setLocationGranted,
         completeProfile,
+        updateUser,
         logout,
         otpSentAt,
       }}

@@ -8,6 +8,7 @@ import {
   Platform,
 } from "react-native";
 import { Image } from "expo-image";
+import InitialsAvatar from "@/components/InitialsAvatar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -146,16 +147,16 @@ export default function HomeScreen() {
             accessibilityLabel="الملف الشخصي والإعدادات"
             hitSlop={6}
           >
-            <Image
-              source={
-                user?.avatarUri
-                  ? { uri: user.avatarUri }
-                  : require("@/assets/images/user-avatar.png")
-              }
-              style={styles.avatarImg}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-            />
+            {user?.avatarUri ? (
+              <Image
+                source={{ uri: user.avatarUri }}
+                style={styles.avatarImg}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <InitialsAvatar name={user?.fullName ?? ""} size={50} />
+            )}
           </Pressable>
 
           <View style={styles.greetingArea}>

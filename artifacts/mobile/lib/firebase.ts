@@ -5,6 +5,7 @@ import {
   browserLocalPersistence,
   getAuth,
 } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBD2_B1RRQ7RSeTXYjhsUd-314juYMkOaI",
@@ -30,5 +31,7 @@ export const auth = (() => {
     return getAuth(app);
   }
 })();
+
+export const storage = getStorage(app);
 
 export default app;

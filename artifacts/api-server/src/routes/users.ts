@@ -2,6 +2,8 @@ import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/requireAuth";
+import { type AuthedRequest } from "../middlewares/requireAuth";
+import { hashPhone } from "../lib/jwt";
 
 const router = Router();
 
@@ -70,18 +72,40 @@ router.post("/register", requireAuth, async (req: Request, res: Response) => {
 router.put("/profile/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const body = req.body as { fullName?: string; profileImageUrl?: string };
-    const { fullName, profileImageUrl } = body;
+    const auth = (req as AuthedRequest).auth!;
+    const body = req.body as { fullName?: string; profileImageUrl?: string | null };
+
+    const existingUser = await db.query.usersTable.findFirst({
+      where: eq(usersTable.id, id as string),
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({ message: "المستخدم غير موجود" });
+    }
+
+    if (hashPhone(existingUser.phone) !== auth.phoneHash) {
+      return res.status(403).json({ message: "غير مصرّح بتعديل هذا الحساب" });
+    }
+
+    const updateData: {
+      fullName?: string;
+      profileImageUrl?: string | null;
+      updatedAt: Date;
+    } = { updatedAt: new Date() };
+
+    if (typeof body.fullName === "string" && body.fullName.trim()) {
+      updateData.fullName = body.fullName.trim();
+    }
+    if (typeof body.profileImageUrl !== "undefined") {
+      updateData.profileImageUrl = body.profileImageUrl ?? null;
+    }
 
     const updated = await db
       .update(usersTable)
-      .set({ fullName, profileImageUrl, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(usersTable.id, id as string))
       .returning();
 
-    if (!updated[0]) {
-      return res.status(404).json({ message: "المستخدم غير موجود" });
-    }
     return res.json(updated[0]);
   } catch (error) {
     req.log.error({ error }, "Failed to update user profile");
