@@ -32,15 +32,41 @@ const BRAND_BLUE_DEEP = "#1F40C8";
 const BRAND_BLUE = "#2A4FCC";
 const BANNER_CYAN = "#5CC4E6";
 
+const ARABIC = /[\u0600-\u06FF]/;
+const ENGLISH = /[a-zA-Z]/;
+const SYMBOLS = /[\d@#$%*!؟^&()=[\]{}<>|\\/_\-+.,;:'"~`]/;
+
+function validateName(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (SYMBOLS.test(trimmed)) return "يرجى إدخال اسم حقيقي";
+
+  const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
+
+  if (words.length < 3 || words.some((w) => w.length < 3))
+    return "يرجى إدخال الاسم الثلاثي كاملاً";
+
+  if (words.some((w) => /(.)\1{3,}/u.test(w))) return "يرجى إدخال اسم حقيقي";
+
+  if (words.some((w) => ARABIC.test(w) && ENGLISH.test(w)))
+    return "يرجى إدخال اسم حقيقي";
+
+  return "";
+}
+
 export default function EditProfileScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const { user, updateUser } = useAuth();
 
   const [name, setName] = useState(user?.fullName ?? "");
+  const [nameError, setNameError] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editorUri, setEditorUri] = useState<string | null>(null);
+
+  const nameValid = validateName(name) === "";
 
   const screenBg = isDark ? "#0A0F1A" : "#F5F7FB";
   const cardBg = isDark ? "#161B22" : "#FFFFFF";
@@ -71,9 +97,10 @@ export default function EditProfileScreen() {
   };
 
   const handleSave = async () => {
-    const trimmed = name.trim();
-    if (trimmed.length < 2) {
-      Alert.alert("تنبيه", "الاسم يجب أن يكون حرفين على الأقل");
+    const err = validateName(name);
+    if (err) {
+      setNameTouched(true);
+      setNameError(err);
       return;
     }
     if (!user?.id) {
@@ -92,11 +119,12 @@ export default function EditProfileScreen() {
         profileImageUrl = await uploadAvatar(user.id, localImageUri);
       }
 
+      const trimmedName = name.trim();
       const apiUrl = getApiUrl();
       const res = await authFetch(`${apiUrl}/api/users/profile/${user.id}`, {
         method: "PUT",
         body: JSON.stringify({
-          fullName: trimmed,
+          fullName: trimmedName,
           profileImageUrl: profileImageUrl ?? null,
         }),
       });
@@ -114,7 +142,7 @@ export default function EditProfileScreen() {
       };
 
       await updateUser({
-        fullName: updated.fullName ?? trimmed,
+        fullName: updated.fullName ?? trimmedName,
         avatarUri: updated.profileImageUrl ?? undefined,
       });
 
@@ -210,28 +238,48 @@ export default function EditProfileScreen() {
             <View
               style={[
                 styles.inputCard,
-                { backgroundColor: cardBg, borderColor: subtleBorder },
+                {
+                  backgroundColor: cardBg,
+                  borderColor:
+                    nameTouched && nameError ? "#EF4444" : subtleBorder,
+                },
               ]}
             >
               <Feather name="user" size={18} color={textSecondary} />
               <TextInput
                 value={name}
-                onChangeText={setName}
-                placeholder="اكتب اسمك الكامل"
+                onChangeText={(t) => {
+                  setName(t);
+                  if (nameTouched) setNameError(validateName(t));
+                }}
+                onBlur={() => {
+                  setNameTouched(true);
+                  setNameError(validateName(name));
+                }}
+                placeholder="مثال: أحمد محمد علي"
                 placeholderTextColor={textSecondary}
                 style={[styles.input, { color: textPrimary }]}
                 textAlign="right"
                 returnKeyType="done"
                 onSubmitEditing={handleSave}
-                maxLength={50}
+                maxLength={60}
               />
             </View>
-            <ThemedText
-              type="caption"
-              style={[styles.helperText, { color: textSecondary }]}
-            >
-              من حرفين إلى 50 حرف
-            </ThemedText>
+            {nameTouched && nameError ? (
+              <ThemedText
+                type="caption"
+                style={[styles.helperText, { color: "#EF4444" }]}
+              >
+                {nameError}
+              </ThemedText>
+            ) : (
+              <ThemedText
+                type="caption"
+                style={[styles.helperText, { color: textSecondary }]}
+              >
+                اسم ثلاثي، كل كلمة 3 أحرف على الأقل، بدون أرقام أو رموز
+              </ThemedText>
+            )}
           </Animated.View>
 
           {/* Save / Cancel buttons */}
@@ -241,11 +289,11 @@ export default function EditProfileScreen() {
           >
             <Pressable
               onPress={handleSave}
-              disabled={saving}
+              disabled={saving || !nameValid}
               style={({ pressed }) => [
                 styles.saveBtn,
-                pressed && { opacity: 0.85 },
-                saving && { opacity: 0.7 },
+                (!nameValid || saving) && { opacity: 0.45 },
+                pressed && nameValid && !saving && { opacity: 0.85 },
               ]}
             >
               <LinearGradient
