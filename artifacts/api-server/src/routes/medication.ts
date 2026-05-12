@@ -213,10 +213,6 @@ const MOCK_DRUGS: Record<
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 router.post("/search", async (req: Request, res: Response) => {
-  // ── Debug: verify key presence ──
-  console.log("GEMINI_KEY exists:", !!process.env.GEMINI_API_KEY);
-  console.log("GEMINI_KEY prefix:", process.env.GEMINI_API_KEY?.substring(0, 10));
-
   const { medicationName, imageBase64 } = req.body as {
     medicationName?: string;
     imageBase64?: string;
@@ -241,26 +237,26 @@ router.post("/search", async (req: Request, res: Response) => {
     return res.status(400).json({ message: "اسم الدواء أو صورته مطلوب" });
   }
 
-  const { data: geminiData, hardFail, failReason } = await recognizeWithGemini(medicationName, cleanBase64);
+  const { data: claudeData, hardFail, failReason } = await recognizeWithClaude(medicationName, cleanBase64);
 
-  if (geminiData) {
-    return res.json({ ...geminiData, medicationName: geminiData.name });
+  if (claudeData) {
+    return res.json({ ...claudeData, medicationName: claudeData.name });
   }
 
   if (hardFail) {
     // Invalid / revoked key — user must fix this, don't mask with mock data
-    req.log.warn({ failReason }, "Gemini hard fail — returning error to client");
+    req.log.warn({ failReason }, "Claude hard fail — returning error to client");
     return res.status(503).json({
-      error:  failReason ?? "مفتاح Gemini غير صالح. يرجى تحديث المفتاح.",
-      code:   "GEMINI_AUTH_FAILED",
+      error:  failReason ?? "مفتاح Claude غير صالح. يرجى تحديث المفتاح.",
+      code:   "CLAUDE_AUTH_FAILED",
     });
   }
 
-  // Soft fail (quota exceeded, network, no key) — fall back to mock data transparently
+  // Soft fail (rate limit, network, no key) — fall back to mock data transparently
   if (failReason) {
-    req.log.warn({ failReason }, "Gemini soft fail — falling back to mock data");
+    req.log.warn({ failReason }, "Claude soft fail — falling back to mock data");
   } else {
-    req.log.info("GEMINI_API_KEY not set — using mock data");
+    req.log.info("ANTHROPIC_API_KEY not set — using mock data");
   }
   const key   = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
   const found = Object.keys(MOCK_DRUGS).find((k) => k !== "default" && key.includes(k));
