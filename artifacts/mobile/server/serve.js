@@ -115,6 +115,12 @@ const server = http.createServer((req, res) => {
     pathname = pathname.slice(basePath.length) || "/";
   }
 
+  if (pathname === "/robots.txt") {
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    res.end("User-agent: *\nAllow: /\n");
+    return;
+  }
+
   if (pathname === "/" || pathname === "/manifest") {
     const platform = req.headers["expo-platform"];
     if (platform === "ios" || platform === "android") {
