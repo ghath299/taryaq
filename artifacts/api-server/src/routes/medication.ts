@@ -1,12 +1,13 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middlewares/requireAuth";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
-// ─── Gemini drug recognition ──────────────────────────────────────────────────
+// ─── Claude drug recognition ──────────────────────────────────────────────────
 
-interface GeminiResult {
+interface ClaudeResult {
   name: string;
   manufacturer: string;
   usage: string;
@@ -17,108 +18,118 @@ interface GeminiResult {
 }
 
 // hardFail = true  → key is invalid/unauthorised  → show error to user
-// hardFail = false → quota exceeded / network / parse → fall back to mock silently
-interface GeminiOutcome {
-  data:      GeminiResult | null;
-  hardFail:  boolean;
+// hardFail = false → rate-limit / network / parse  → fall back to mock silently
+interface ClaudeOutcome {
+  data:        ClaudeResult | null;
+  hardFail:    boolean;
   failReason?: string;
 }
 
-async function recognizeWithGemini(
+async function recognizeWithClaude(
   medicationName?: string,
   imageBase64?: string,
-): Promise<GeminiOutcome> {
-  const apiKey = process.env.GEMINI_API_KEY;
+): Promise<ClaudeOutcome> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { data: null, hardFail: false };
-
-  const parts: object[] = [];
-
-  if (imageBase64) {
-    parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64 } });
-    parts.push({
-      text: "Identify this medication from the image. Return ONLY a JSON object (no markdown, no code fences) with exactly these fields: name (full trade name in English), manufacturer (company name), usage (in Arabic, 1-2 sentences), dosage (in Arabic, clear timing and quantity), activeIngredient (in Arabic), sideEffects (in Arabic, brief). If unidentifiable, set name to \"غير معروف\".",
-    });
-  } else {
-    parts.push({
-      text: `You are a licensed pharmacist. For the drug named "${medicationName}", return ONLY a JSON object (no markdown, no code fences) with exactly these fields: name (full trade name), manufacturer (company name), usage (in Arabic, 1-2 sentences), dosage (in Arabic, clear timing and quantity), activeIngredient (in Arabic), sideEffects (in Arabic, brief). Respond only with the JSON object.`,
-    });
-  }
 
   try {
     logger.info(
       { hasMedName: !!medicationName, hasImage: !!imageBase64, imageBytes: imageBase64?.length ?? 0 },
-      "calling Gemini API",
+      "calling Claude API",
     );
 
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ contents: [{ parts }] }),
-      },
-    );
+    const client = new Anthropic({ apiKey });
 
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      logger.error({ status: resp.status, body: errText.slice(0, 200) }, "Gemini API HTTP error");
+    let response: Anthropic.Message;
 
-      // 401 / 403 = invalid or revoked key → hard fail (user must fix the key)
-      if (resp.status === 401 || resp.status === 403) {
-        return { data: null, hardFail: true, failReason: "مفتاح Gemini غير صالح أو منتهي الصلاحية. يرجى تحديث المفتاح." };
-      }
-      // 429 = quota exceeded → soft fail → use mock
-      return { data: null, hardFail: false, failReason: `Gemini HTTP ${resp.status}` };
+    if (imageBase64) {
+      response = await client.messages.create({
+        model:      "claude-opus-4-5",
+        max_tokens: 1024,
+        messages: [{
+          role:    "user",
+          content: [
+            {
+              type:   "image",
+              source: { type: "base64", media_type: "image/jpeg", data: imageBase64 },
+            },
+            {
+              type: "text",
+              text: `تعرف على الدواء في هذه الصورة وأعطني معلوماته بالعربي بصيغة JSON فقط بدون أي نص إضافي:
+{
+  "name": "اسم الدواء",
+  "company": "الشركة المصنعة",
+  "activeIngredient": "المادة الفعالة",
+  "usage": "الاستخدام",
+  "dosage": "الجرعة الموصى بها"
+}`,
+            },
+          ],
+        }],
+      });
+    } else {
+      response = await client.messages.create({
+        model:      "claude-opus-4-5",
+        max_tokens: 1024,
+        messages: [{
+          role:    "user",
+          content: `تعرف على هذا الدواء وأعطني معلوماته بالعربي بصيغة JSON فقط بدون أي نص إضافي:
+{
+  "name": "اسم الدواء",
+  "company": "الشركة المصنعة",
+  "activeIngredient": "المادة الفعالة",
+  "usage": "الاستخدام",
+  "dosage": "الجرعة الموصى بها"
+}
+اسم الدواء: ${medicationName}`,
+        }],
+      });
     }
 
-    const geminiData = (await resp.json()) as {
-      candidates?: Array<{ content: { parts: Array<{ text: string }> } }>;
-      error?: { message: string };
-    };
+    // ── Debug: log full Claude response before processing ──
+    console.log("CLAUDE_FULL_RESPONSE:", JSON.stringify(response, null, 2));
 
-    // ── Debug: log full Gemini response before processing ──
-    console.log("GEMINI_FULL_RESPONSE:", JSON.stringify(geminiData, null, 2));
-
-    if (geminiData.error) {
-      logger.error({ geminiError: geminiData.error.message }, "Gemini API returned error object");
-      return { data: null, hardFail: false, failReason: geminiData.error.message };
-    }
-
-    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    logger.info({ rawText: text.slice(0, 300) }, "Gemini raw response");
+    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    logger.info({ rawText: text.slice(0, 300) }, "Claude raw response");
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      logger.warn({ text: text.slice(0, 200) }, "Gemini response contained no JSON");
-      return { data: null, hardFail: false, failReason: "no JSON in Gemini response" };
+      logger.warn({ text: text.slice(0, 200) }, "Claude response contained no JSON");
+      return { data: null, hardFail: false, failReason: "no JSON in Claude response" };
     }
 
     const parsed = JSON.parse(jsonMatch[0]) as {
-      name?: string;
-      manufacturer?: string;
-      usage?: string;
-      dosage?: string;
+      name?:             string;
+      company?:          string;
       activeIngredient?: string;
-      sideEffects?: string;
+      usage?:            string;
+      dosage?:           string;
     };
 
-    logger.info({ name: parsed.name }, "Gemini recognition success");
+    logger.info({ name: parsed.name }, "Claude recognition success");
 
     return {
       data: {
-        name:             parsed.name ?? medicationName ?? "Unknown",
-        manufacturer:     parsed.manufacturer ?? "Unknown",
-        usage:            parsed.usage ?? "",
-        dosage:           parsed.dosage ?? "",
+        name:             parsed.name            ?? medicationName ?? "Unknown",
+        manufacturer:     parsed.company         ?? "Unknown",
         activeIngredient: parsed.activeIngredient ?? "",
-        sideEffects:      parsed.sideEffects ?? "",
+        usage:            parsed.usage            ?? "",
+        dosage:           parsed.dosage           ?? "",
+        sideEffects:      "",
         confidence:       imageBase64 ? 0.92 : 0.97,
       },
       hardFail: false,
     };
-  } catch (err) {
-    logger.error({ err }, "Gemini recognition exception");
-    return { data: null, hardFail: false, failReason: "network/exception" };
+  } catch (err: unknown) {
+    const apiErr = err as { status?: number; message?: string };
+    logger.error({ status: apiErr.status, message: apiErr.message }, "Claude recognition error");
+
+    // 401 = invalid key → hard fail (user must fix the key)
+    if (apiErr.status === 401) {
+      return { data: null, hardFail: true, failReason: "مفتاح Claude غير صالح. يرجى تحديث المفتاح." };
+    }
+    // 429 / 529 = rate limit / overload → soft fail → use mock
+    return { data: null, hardFail: false, failReason: `Claude error ${apiErr.status ?? "unknown"}: ${apiErr.message ?? ""}` };
   }
 }
 
