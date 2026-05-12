@@ -1,5 +1,5 @@
-import MedicineSearchMapScreen from "@/components/MedicineSearchMapScreen";
+import { Redirect } from "expo-router";
 
 export default function MedicinesTab() {
-  return <MedicineSearchMapScreen />;
+  return <Redirect href="/medicine-search" />;
 }

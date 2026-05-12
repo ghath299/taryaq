@@ -140,6 +140,22 @@ export default function ProfileScreen() {
           onPress: () => router.push("/orders"),
         },
         {
+          id: "my-medications",
+          label: "أدويتي الدائمة",
+          icon: "activity",
+          iconColor: "#10B981",
+          bg: "#D1FAE5",
+          onPress: () => router.push("/my-medications"),
+        },
+        {
+          id: "medication-history",
+          label: "سجل طلبات الدواء",
+          icon: "file-text",
+          iconColor: "#8B5CF6",
+          bg: "#EDE9FE",
+          onPress: () => router.push("/medication-history"),
+        },
+        {
           id: "notifications-list",
           label: "الإشعارات",
           icon: "bell",

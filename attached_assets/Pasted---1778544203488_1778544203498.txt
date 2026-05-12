@@ -1,0 +1,137 @@
+أريد إعادة بناء نظام "البحث عن دواء" كاملاً من الصفر داخل التطبيق الحالي. لا تنشئ مشروعاً جديداً — اعمل داخل الهيكل الموجود.
+
+أولاً — قاعدة البيانات
+أضف هذه الجداول في lib/db/src/schema/index.ts وشغّل migration:
+pharmacies: id, name, ownerName, phone, licenseImage, latitude, longitude, address, status (pending/approved/rejected), isAvailable, rating, totalRatings, createdAt
+
+medication_requests: id, patientId, medicationName, medicationImage, searchRadius, status (searching/pending/confirmed/completed/cancelled), cancelReason, patientLat, patientLng, createdAt
+
+pharmacy_responses: id, requestId, pharmacyId, status (available/unavailable/timeout/cancelled), respondedAt, confirmedAt, pharmacyDeliveredAt, patientReceivedAt, cancelReason
+
+patient_medications: id, patientId, medicationName, medicationImage, dailyDoses, pillsPerDose, totalPills, startDate, endDate, isChronic, lastPharmacyId, createdAt
+
+medication_reminders: id, patientMedicationId, reminderDate, isSent, createdAt
+
+pharmacy_ratings: id, pharmacyId, patientId, requestId, rating (1-5), createdAt
+
+violations: id, userId, userType (patient/pharmacy), type, requestId, isBanned, banUntil, createdAt
+
+pharmacy_wallets: id, pharmacyId, balance, totalEarned, totalDeducted, updatedAt
+
+wallet_transactions: id, pharmacyId, amount, type (deposit/deduction), method (mastercard/transfer), transferCode, status (pending/confirmed/failed), confirmedBy, confirmedAt, createdAt
+
+ثانياً — الـ API Endpoints
+أضف في artifacts/api-server/src/routes/:
+ملف pharmacy.ts:
+
+POST /api/pharmacy/register — تسجيل صيدلية جديدة
+PUT /api/pharmacy/availability — تغيير حالة متاح/غير متاح
+GET /api/pharmacy/nearby — جلب الصيدليات في نطاق 500 متر
+POST /api/pharmacy/respond — رد على طلب دواء (متوفر/غير متوفر)
+PUT /api/pharmacy/deliver — تأكيد تسليم الدواء
+
+ملف medication.ts:
+
+POST /api/medication/search — بحث عن دواء (اسم أو صورة عبر Gemini API)
+POST /api/medication/request — إنشاء طلب بحث جديد
+PUT /api/medication/confirm-receipt — المريض يؤكد الاستلام
+PUT /api/medication/cancel — إلغاء الطلب مع سبب
+GET /api/medication/history — سجل الطلبات
+POST /api/medication/save — حفظ دواء مع الجرعات بعد الاستلام
+GET /api/medication/reminders — جلب التذكيرات
+
+
+ثالثاً — المتغيرات البيئية
+أضف في .env:
+GEMINI_API_KEY=your_key_here
+OPENROUTE_API_KEY=your_key_here
+MASTERCARD_API_KEY=
+MASTERCARD_API_URL=
+
+رابعاً — واجهة تطبيق المريض
+عدّل artifacts/mobile/app/medicine-search.tsx و components/MedicineSearchMapScreen.tsx بالكامل:
+شاشة البحث عن دواء:
+١- حقل بحث يقبل:
+
+كتابة اسم الدواء
+التقاط صورة من الكاميرا
+اختيار صورة من المعرض
+Gemini API يتعرف على الدواء ويعرض: الاسم، الشركة، الاستخدام، الجرعة
+زر "هذا هو الدواء ✅" وزر "تغيير"
+
+٢- بعد التأكيد — شاشة البحث:
+
+slider يحدد نطاق البحث
+خريطة OpenStreetMap تعرض:
+
+موقع المريض (نقطة زرقاء)
+دائرة تكبر بشكل سلس وسريع حسب النطاق
+الصيدليات تظهر فقط في نطاق 500 متر دائماً (بدون بحث)
+أيقونة الصيدلية تتغير حسب الحالة:
+
+🟢 متاحة
+🔴 غير متوفر
+⚫ غير متاحة
+⏳ لم ترد بعد
+
+
+
+
+الضغط على صيدلية يعرض معلوماتها فقط (بدون إمكانية الطلب المباشر)
+
+٣- لما تبدأ عملية البحث:
+
+إشعار يروح لكل الصيدليات داخل الدائرة عبر Firebase
+الإشعار يحتوي: صورة المريض + اسمه + اسم الدواء + صورة الدواء + عداد دقيقتين
+الأسرع بالرد "متوفر" يأخذ الطلب
+لو صيدليتين ردوا بنفس الوقت → الأول يأخذها
+لو ما رد بدقيقتين → علامة رمادية تلقائياً
+بعد التأكيد → خط يتبع الشوارع الحقيقية عبر OpenRouteService API
+
+٤- الوقت والإلغاء:
+
+وقت الوصول = حساب المسافة + 10 دقائق احتياطي
+قبل 5 دقائق من الإلغاء → إشعار تحذيري
+المريض يختار وقت إضافي: 10 أو 15 أو 20 دقيقة (مرتين فقط)
+زر إلغاء الطلب مع سبب إجباري
+بعد 5 إلغاءات بدون سبب وجيه → حظر 24 ساعة
+
+٥- بعد الاستلام:
+
+الصيدلاني يضغط "سلّمت الدواء" → إشعار للمريض
+المريض يضغط "استلمت الدواء"
+تقييم إجباري للصيدلية (1-5 نجوم)
+التطبيق يسأل: كم مرة في اليوم؟ كم قرص؟ من اليوم تبدأ؟
+يحسب تاريخ الانتهاء ويذكر المريض قبل يوم
+إشعار التذكير يسأل: "تريد نفس الجرعة؟" + "اطلب من نفس الصيدلية أو ابحث عن جديدة"
+
+٦- نظام التناقض:
+
+النظام يراجع موقع المريض وقت الضغط
+فرق أكثر من ساعة بين الضغطتين = مشبوه تلقائياً
+المريض ما راح للصيدلية = كاذب تلقائياً
+غير واضح = يوصل للأدمن يقرر يدوياً
+لا خصم ولا حظر حتى يثبت النظام أو الأدمن من المخطئ
+
+
+خامساً — القائمة الجانبية للمريض
+أضف في قائمة الحساب:
+
+أدويتي الدائمة
+سجل طلباتي (اسم الدواء، الصيدلية، التاريخ، السعر، الحالة، زر إعادة الطلب)
+
+
+سادساً — تنبيهات مهمة:
+
+لا تلمس نظام Firebase OTP أو تسجيل الدخول
+لا تلمس واجهات الطبيب والسكرتير
+استخدم نفس الـ AuthContext الموجود
+استخدم نفس تصميم التطبيق الحالي (ألوان، خطوط، RTL)
+البيانات وهمية للعرض فقط
+
+
+سابعاً — بعد الانتهاء:
+
+شغّل typecheck
+اذكر الملفات المعدّلة
+اشرح طريقة الاختبار
