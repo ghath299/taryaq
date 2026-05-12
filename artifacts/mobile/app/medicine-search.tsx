@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -16,11 +16,13 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import Animated, { FadeIn, FadeInDown, FadeInUp, ZoomIn } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import MedicineSearchMapScreen, { type FoundPharmacy } from "@/components/MedicineSearchMapScreen";
+import { getApiUrl } from "@/lib/query-client";
 
 type Step = "input" | "confirm" | "searching" | "delivery" | "rate" | "doses" | "done";
 
@@ -35,10 +37,10 @@ interface DrugInfo {
 
 const RADIUS_OPTIONS = [
   { label: "500 م", value: 500 },
-  { label: "1 كم", value: 1000 },
-  { label: "2 كم", value: 2000 },
-  { label: "3 كم", value: 3000 },
-  { label: "5 كم", value: 5000 },
+  { label: "1 كم",  value: 1000 },
+  { label: "2 كم",  value: 2000 },
+  { label: "3 كم",  value: 3000 },
+  { label: "5 كم",  value: 5000 },
 ];
 
 const CANCEL_REASONS = [
@@ -50,13 +52,13 @@ const CANCEL_REASONS = [
 ];
 
 const STEP_TITLES: Record<Step, string> = {
-  input: "البحث عن دواء",
-  confirm: "تأكيد الدواء",
-  searching: "جارٍ البحث",
+  input:    "البحث عن دواء",
+  confirm:  "تأكيد الدواء",
+  searching:"جارٍ البحث",
   delivery: "الصيدلية في الطريق",
-  rate: "قيّم الصيدلية",
-  doses: "معلومات الجرعة",
-  done: "تم الحفظ",
+  rate:     "قيّم الصيدلية",
+  doses:    "معلومات الجرعة",
+  done:     "تم الحفظ",
 };
 
 export default function MedicineSearchScreen() {
@@ -64,49 +66,104 @@ export default function MedicineSearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>("input");
-  const [query, setQuery] = useState("");
+  const [step, setStep]             = useState<Step>("input");
+  const [query, setQuery]           = useState("");
   const [isRecognizing, setIsRecognizing] = useState(false);
-  const [drugInfo, setDrugInfo] = useState<DrugInfo | null>(null);
+  const [drugInfo, setDrugInfo]     = useState<DrugInfo | null>(null);
   const [searchRadius, setSearchRadius] = useState(500);
   const [isSearchingActive, setIsSearchingActive] = useState(false);
   const [foundPharmacy, setFoundPharmacy] = useState<FoundPharmacy | null>(null);
 
   const [deliveryMinutes, setDeliveryMinutes] = useState(15);
-  const [extensionCount, setExtensionCount] = useState(0);
+  const [extensionCount, setExtensionCount]   = useState(0);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
-  const [customReason, setCustomReason] = useState("");
+  const [cancelReason, setCancelReason]       = useState("");
+  const [customReason, setCustomReason]       = useState("");
 
   const [rating, setRating] = useState(0);
 
-  const [dailyDoses, setDailyDoses] = useState(2);
+  // Dose info — pillsInBox replaces the old "total pills" manual field
+  const [dailyDoses, setDailyDoses]   = useState(2);
   const [pillsPerDose, setPillsPerDose] = useState(1);
-  const [totalPills, setTotalPills] = useState(20);
-  const [isChronic, setIsChronic] = useState(false);
+  const [pillsInBox, setPillsInBox]   = useState(20);
+  const [isChronic, setIsChronic]     = useState(false);
 
-  const cardBg = isDark ? theme.card : "#FFFFFF";
+  // Location & routing
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [routeCoords, setRouteCoords]   = useState<{ latitude: number; longitude: number }[] | null>(null);
+
+  const cardBg      = isDark ? theme.card : "#FFFFFF";
   const subtleBorder = isDark ? "#21262D" : "#E5EEF5";
 
-  const recognizeDrug = useCallback(
-    async (name: string, imageUri?: string) => {
-      if (!name.trim() && !imageUri) return;
-      setIsRecognizing(true);
-      await new Promise((r) => setTimeout(r, 1400));
-      const key = name.toLowerCase().replace(/\s+/g, "");
-      let info: DrugInfo;
-      if (key.includes("augmentin") || key.includes("اوجمنتن")) {
-        info = { name: name || "Augmentin 625", manufacturer: "GlaxoSmithKline", usage: "مضاد حيوي لعلاج الالتهابات البكتيرية", dosage: "قرص كل 12 ساعة مع الطعام لمدة 7-10 أيام", activeIngredient: "أموكسيسيلين 500 ملغ + حمض كلافولانيك 125 ملغ", imageUri };
-      } else if (key.includes("nexium") || key.includes("نكسيوم")) {
-        info = { name: name || "Nexium 40mg", manufacturer: "AstraZeneca", usage: "لعلاج قرحة المعدة وارتجاع الحمض", dosage: "كبسولة واحدة يومياً قبل الأكل", activeIngredient: "إيزوميبرازول 40 ملغ", imageUri };
-      } else if (key.includes("concor") || key.includes("كونكور")) {
-        info = { name: name || "Concor 5mg", manufacturer: "Merck KGaA", usage: "لعلاج ضغط الدم وأمراض القلب", dosage: "قرص واحد يومياً في الصباح", activeIngredient: "بيزوبرولول فومارات 5 ملغ", imageUri };
-      } else {
-        info = { name: name || "Panadol Extra", manufacturer: "GlaxoSmithKline", usage: "مسكن للألم وخافض للحرارة", dosage: "قرص إلى قرصين كل 4-6 ساعات، بحد أقصى 8 أقراص يومياً", activeIngredient: "باراسيتامول 500 ملغ + كافيين 65 ملغ", imageUri };
+  // ── Get real GPS location on mount ──────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setUserLocation({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+      } catch {
+        // permission denied or unavailable — map falls back to Baghdad
       }
-      setDrugInfo(info);
-      setIsRecognizing(false);
-      setStep("confirm");
+    })();
+  }, []);
+
+  // ── Computed: auto days-supply from box size ─────────────────────────────────
+  const dailyConsumption = dailyDoses * pillsPerDose;
+  const daysSupply = isChronic || dailyConsumption === 0
+    ? null
+    : Math.floor(pillsInBox / dailyConsumption);
+  const endDate = daysSupply
+    ? new Date(Date.now() + daysSupply * 86400000).toLocaleDateString("ar-IQ")
+    : null;
+
+  // ── Drug recognition via API (Gemini or fallback) ──────────────────────────
+  const recognizeDrug = useCallback(
+    async (name: string, imageUri?: string, imageBase64?: string) => {
+      if (!name.trim() && !imageBase64) return;
+      setIsRecognizing(true);
+      try {
+        const body: Record<string, string> = {};
+        if (name.trim())  body.medicationName = name.trim();
+        if (imageBase64)  body.imageBase64    = imageBase64;
+
+        const resp = await fetch(`${getApiUrl()}/api/medication/search`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        });
+
+        if (!resp.ok) throw new Error("server error");
+
+        const data = await resp.json() as {
+          name?: string;
+          medicationName?: string;
+          manufacturer?: string;
+          usage?: string;
+          dosage?: string;
+          activeIngredient?: string;
+        };
+
+        setDrugInfo({
+          name:             data.name ?? data.medicationName ?? name,
+          manufacturer:     data.manufacturer ?? "",
+          usage:            data.usage ?? "",
+          dosage:           data.dosage ?? "",
+          activeIngredient: data.activeIngredient ?? "",
+          imageUri,
+        });
+        setStep("confirm");
+      } catch {
+        Alert.alert("خطأ", "تعذّر التعرف على الدواء. تأكد من الاتصال وأعد المحاولة.");
+      } finally {
+        setIsRecognizing(false);
+      }
     },
     [],
   );
@@ -117,9 +174,13 @@ export default function MedicineSearchScreen() {
       Alert.alert("الإذن مرفوض", "يرجى السماح للتطبيق بالوصول إلى معرض الصور");
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: "images", quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      quality: 0.4,
+      base64: true,
+    });
     if (!result.canceled && result.assets[0]) {
-      await recognizeDrug("Panadol Extra", result.assets[0].uri);
+      await recognizeDrug("", result.assets[0].uri, result.assets[0].base64 ?? undefined);
     }
   };
 
@@ -129,18 +190,44 @@ export default function MedicineSearchScreen() {
       Alert.alert("الإذن مرفوض", "يرجى السماح للتطبيق بالوصول إلى الكاميرا");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.4,
+      base64: true,
+    });
     if (!result.canceled && result.assets[0]) {
-      await recognizeDrug("Panadol Extra", result.assets[0].uri);
+      await recognizeDrug("", result.assets[0].uri, result.assets[0].base64 ?? undefined);
     }
   };
 
-  const handlePharmacyFound = useCallback((pharmacy: FoundPharmacy) => {
+  // ── After pharmacy accepts: fetch street route ───────────────────────────────
+  const handlePharmacyFound = useCallback(async (pharmacy: FoundPharmacy) => {
     setFoundPharmacy(pharmacy);
     setIsSearchingActive(false);
-    setDeliveryMinutes(Math.round(pharmacy.distanceM / 1000 * 5) + 10);
+    setDeliveryMinutes(Math.round((pharmacy.distanceM / 1000) * 5) + 10);
+
+    if (userLocation) {
+      try {
+        const resp = await fetch(`${getApiUrl()}/api/medication/route`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fromLat: userLocation.latitude,
+            fromLng: userLocation.longitude,
+            toLat:   pharmacy.latitude,
+            toLng:   pharmacy.longitude,
+          }),
+        });
+        if (resp.ok) {
+          const data = await resp.json() as { coordinates?: { latitude: number; longitude: number }[] };
+          if (data.coordinates) setRouteCoords(data.coordinates);
+        }
+      } catch {
+        // routing failed — map will show straight line or no line
+      }
+    }
+
     setTimeout(() => setStep("delivery"), 800);
-  }, []);
+  }, [userLocation]);
 
   const startSearch = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -167,26 +254,17 @@ export default function MedicineSearchScreen() {
     setStep("input");
     setIsSearchingActive(false);
     setFoundPharmacy(null);
+    setRouteCoords(null);
     setDrugInfo(null);
     setQuery("");
   };
 
-  const handleConfirmReceipt = () => {
-    setStep("rate");
-  };
+  const handleConfirmReceipt = () => setStep("rate");
 
   const handleSubmitRating = () => {
-    if (rating === 0) {
-      Alert.alert("مطلوب", "يرجى تقييم الصيدلية");
-      return;
-    }
+    if (rating === 0) { Alert.alert("مطلوب", "يرجى تقييم الصيدلية"); return; }
     setStep("doses");
   };
-
-  const daysSupply = isChronic ? null : Math.floor(totalPills / (dailyDoses * pillsPerDose));
-  const endDate = daysSupply
-    ? new Date(Date.now() + daysSupply * 86400000).toLocaleDateString("ar-IQ")
-    : null;
 
   const handleSaveDoses = () => {
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -194,19 +272,10 @@ export default function MedicineSearchScreen() {
   };
 
   const goBack = () => {
-    const backMap: Partial<Record<Step, Step>> = {
-      confirm: "input",
-      searching: "confirm",
-    };
+    const backMap: Partial<Record<Step, Step>> = { confirm: "input", searching: "confirm" };
     const prev = backMap[step];
-    if (prev) {
-      setStep(prev);
-      if (step === "searching") {
-        setIsSearchingActive(false);
-      }
-    } else {
-      router.back();
-    }
+    if (prev) { setStep(prev); if (step === "searching") setIsSearchingActive(false); }
+    else router.back();
   };
 
   return (
@@ -231,11 +300,7 @@ export default function MedicineSearchScreen() {
           onSearch={() => recognizeDrug(query)}
           onCamera={pickFromCamera}
           onGallery={pickFromGallery}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -244,11 +309,7 @@ export default function MedicineSearchScreen() {
           drug={drugInfo}
           onConfirm={() => setStep("searching")}
           onChange={() => setStep("input")}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -261,11 +322,8 @@ export default function MedicineSearchScreen() {
           onStartSearch={startSearch}
           onPharmacyFound={handlePharmacyFound}
           onCancel={() => setShowCancelModal(true)}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          userLocation={userLocation}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -278,11 +336,9 @@ export default function MedicineSearchScreen() {
           onExtend={handleExtend}
           onConfirmReceipt={handleConfirmReceipt}
           onCancel={() => setShowCancelModal(true)}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          userLocation={userLocation}
+          routeCoords={routeCoords}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -292,11 +348,7 @@ export default function MedicineSearchScreen() {
           rating={rating}
           onRate={setRating}
           onSubmit={handleSubmitRating}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -305,20 +357,16 @@ export default function MedicineSearchScreen() {
           drug={drugInfo}
           dailyDoses={dailyDoses}
           pillsPerDose={pillsPerDose}
-          totalPills={totalPills}
+          pillsInBox={pillsInBox}
           isChronic={isChronic}
           daysSupply={daysSupply}
           endDate={endDate}
           onDailyDoses={setDailyDoses}
           onPillsPerDose={setPillsPerDose}
-          onTotalPills={setTotalPills}
+          onPillsInBox={setPillsInBox}
           onChronic={setIsChronic}
           onSave={handleSaveDoses}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
@@ -331,20 +379,13 @@ export default function MedicineSearchScreen() {
           isChronic={isChronic}
           onHome={() => router.replace("/(tabs)")}
           onMyMeds={() => router.push("/my-medications")}
-          theme={theme}
-          isDark={isDark}
-          cardBg={cardBg}
-          subtleBorder={subtleBorder}
-          insets={insets}
+          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
 
       <Modal visible={showCancelModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={[styles.modalSheet, { backgroundColor: cardBg }]}
-          >
+          <Animated.View entering={FadeInDown.duration(300)} style={[styles.modalSheet, { backgroundColor: cardBg }]}>
             <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", textAlign: "right", marginBottom: Spacing.md }}>
               سبب الإلغاء
             </ThemedText>
@@ -377,16 +418,10 @@ export default function MedicineSearchScreen() {
               />
             )}
             <View style={styles.modalBtns}>
-              <Pressable
-                onPress={() => setShowCancelModal(false)}
-                style={[styles.modalBtn, { borderColor: subtleBorder }]}
-              >
+              <Pressable onPress={() => setShowCancelModal(false)} style={[styles.modalBtn, { borderColor: subtleBorder }]}>
                 <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700" }}>رجوع</ThemedText>
               </Pressable>
-              <Pressable
-                onPress={handleCancel}
-                style={[styles.modalBtn, { backgroundColor: theme.error, borderColor: theme.error }]}
-              >
+              <Pressable onPress={handleCancel} style={[styles.modalBtn, { backgroundColor: theme.error, borderColor: theme.error }]}>
                 <ThemedText type="body" style={{ color: "#fff", fontWeight: "700" }}>تأكيد الإلغاء</ThemedText>
               </Pressable>
             </View>
@@ -397,6 +432,8 @@ export default function MedicineSearchScreen() {
   );
 }
 
+// ── Shared prop types ──────────────────────────────────────────────────────────
+
 interface BaseProps {
   theme: ReturnType<typeof useTheme>["theme"];
   isDark: boolean;
@@ -404,6 +441,8 @@ interface BaseProps {
   subtleBorder: string;
   insets: { bottom: number };
 }
+
+// ── Step: input ────────────────────────────────────────────────────────────────
 
 function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   query: string;
@@ -445,23 +484,17 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
         </View>
 
         <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginBottom: Spacing.md }}>
-          صوّر علبة الدواء وسيتعرّف عليها التطبيق تلقائياً
+          صوّر علبة الدواء وسيتعرّف عليها الذكاء الاصطناعي تلقائياً
         </ThemedText>
 
         <View style={styles.imagePickRow}>
-          <Pressable
-            onPress={onCamera}
-            style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}
-          >
+          <Pressable onPress={onCamera} style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}>
             <LinearGradient colors={[addAlpha(theme.primaryDark, 0.12), addAlpha(theme.primaryDark, 0.05)]} style={styles.imagePickGrad}>
               <Feather name="camera" size={28} color={theme.primaryDark} />
               <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginTop: 6 }}>الكاميرا</ThemedText>
             </LinearGradient>
           </Pressable>
-          <Pressable
-            onPress={onGallery}
-            style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}
-          >
+          <Pressable onPress={onGallery} style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}>
             <LinearGradient colors={[addAlpha(theme.primaryDark, 0.12), addAlpha(theme.primaryDark, 0.05)]} style={styles.imagePickGrad}>
               <Feather name="image" size={28} color={theme.primaryDark} />
               <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginTop: 6 }}>المعرض</ThemedText>
@@ -473,7 +506,7 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
           <Animated.View entering={FadeIn.duration(300)} style={[styles.recognizingCard, { backgroundColor: addAlpha(theme.primaryDark, 0.08) }]}>
             <MaterialCommunityIcons name="brain" size={24} color={theme.primaryDark} />
             <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 10 }}>
-              جارٍ التعرّف على الدواء...
+              الذكاء الاصطناعي يتعرّف على الدواء...
             </ThemedText>
           </Animated.View>
         )}
@@ -481,6 +514,8 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
     </ScrollView>
   );
 }
+
+// ── Step: confirm ─────────────────────────────────────────────────────────────
 
 function StepConfirm({ drug, onConfirm, onChange, theme, cardBg, subtleBorder, insets }: BaseProps & {
   drug: DrugInfo;
@@ -500,39 +535,28 @@ function StepConfirm({ drug, onConfirm, onChange, theme, cardBg, subtleBorder, i
               </View>
             )}
             <View style={{ flex: 1, marginRight: Spacing.md }}>
-              <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", textAlign: "right" }}>
-                {drug.name}
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>
-                {drug.manufacturer}
-              </ThemedText>
+              <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", textAlign: "right" }}>{drug.name}</ThemedText>
+              <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>{drug.manufacturer}</ThemedText>
             </View>
           </View>
-
           {[
-            { label: "المادة الفعّالة", value: drug.activeIngredient },
-            { label: "الاستخدام", value: drug.usage },
-            { label: "الجرعة الموصى بها", value: drug.dosage },
+            { label: "المادة الفعّالة",     value: drug.activeIngredient },
+            { label: "الاستخدام",           value: drug.usage },
+            { label: "الجرعة الموصى بها",  value: drug.dosage },
           ].map((row) => (
             <View key={row.label} style={[styles.infoRow, { borderTopColor: subtleBorder }]}>
-              <ThemedText type="small" style={{ color: theme.text, flex: 1, textAlign: "right" }}>{row.value}</ThemedText>
+              <ThemedText type="small"   style={{ color: theme.text,          flex: 1,     textAlign: "right" }}>{row.value}</ThemedText>
               <ThemedText type="caption" style={{ color: theme.textSecondary, marginLeft: Spacing.md, minWidth: 80, textAlign: "left" }}>{row.label}</ThemedText>
             </View>
           ))}
         </View>
 
         <View style={styles.confirmBtns}>
-          <Pressable
-            onPress={onChange}
-            style={[styles.changeBtn, { borderColor: subtleBorder }]}
-          >
+          <Pressable onPress={onChange} style={[styles.changeBtn, { borderColor: subtleBorder }]}>
             <Feather name="edit-2" size={16} color={theme.textSecondary} />
             <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700", marginRight: 6 }}>تغيير</ThemedText>
           </Pressable>
-          <Pressable
-            onPress={onConfirm}
-            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}
-          >
+          <Pressable onPress={onConfirm} style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}>
             <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.confirmGrad}>
               <Feather name="check" size={18} color="#fff" />
               <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>هذا هو الدواء ✅</ThemedText>
@@ -544,7 +568,9 @@ function StepConfirm({ drug, onConfirm, onChange, theme, cardBg, subtleBorder, i
   );
 }
 
-function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, onStartSearch, onPharmacyFound, onCancel, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+// ── Step: searching (map) ─────────────────────────────────────────────────────
+
+function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, onStartSearch, onPharmacyFound, onCancel, userLocation, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   drug: DrugInfo;
   searchRadius: number;
   onRadiusChange: (v: number) => void;
@@ -552,6 +578,7 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
   onStartSearch: () => void;
   onPharmacyFound: (p: FoundPharmacy) => void;
   onCancel: () => void;
+  userLocation: { latitude: number; longitude: number } | null;
 }) {
   return (
     <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 24 }}>
@@ -561,8 +588,8 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
             <MaterialCommunityIcons name="pill" size={20} color={theme.primaryDark} />
           </View>
           <View style={{ flex: 1, marginRight: Spacing.sm }}>
-            <ThemedText type="small" style={{ color: theme.text, fontWeight: "800", textAlign: "right" }}>{drug.name}</ThemedText>
-            <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>{drug.activeIngredient}</ThemedText>
+            <ThemedText type="small"   style={{ color: theme.text,          fontWeight: "800", textAlign: "right" }}>{drug.name}</ThemedText>
+            <ThemedText type="caption" style={{ color: theme.textSecondary,                    textAlign: "right" }}>{drug.activeIngredient}</ThemedText>
           </View>
         </View>
 
@@ -576,26 +603,14 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
                 <Pressable
                   key={opt.value}
                   onPress={() => onRadiusChange(opt.value)}
-                  style={[
-                    styles.radiusBtn,
-                    {
-                      backgroundColor: searchRadius === opt.value ? theme.primaryDark : cardBg,
-                      borderColor: searchRadius === opt.value ? theme.primaryDark : subtleBorder,
-                    },
-                  ]}
+                  style={[styles.radiusBtn, { backgroundColor: searchRadius === opt.value ? theme.primaryDark : cardBg, borderColor: searchRadius === opt.value ? theme.primaryDark : subtleBorder }]}
                 >
-                  <ThemedText
-                    type="caption"
-                    style={{ color: searchRadius === opt.value ? "#fff" : theme.textSecondary, fontWeight: "700" }}
-                  >
+                  <ThemedText type="caption" style={{ color: searchRadius === opt.value ? "#fff" : theme.textSecondary, fontWeight: "700" }}>
                     {opt.label}
                   </ThemedText>
                 </Pressable>
               ))}
             </View>
-            <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right", marginTop: 4 }}>
-              * الصيدليات تظهر دائماً في نطاق 500 متر بغض النظر
-            </ThemedText>
           </Animated.View>
         )}
 
@@ -606,6 +621,7 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
             isSearching={isSearchingActive}
             onPharmacyFound={onPharmacyFound}
             showList={isSearchingActive}
+            userLocation={userLocation}
           />
         </View>
 
@@ -633,7 +649,9 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
   );
 }
 
-function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExtend, onConfirmReceipt, onCancel, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+// ── Step: delivery ────────────────────────────────────────────────────────────
+
+function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExtend, onConfirmReceipt, onCancel, userLocation, routeCoords, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   pharmacy: FoundPharmacy;
   drug: DrugInfo;
   deliveryMinutes: number;
@@ -641,6 +659,8 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
   onExtend: (extra: number) => void;
   onConfirmReceipt: () => void;
   onCancel: () => void;
+  userLocation: { latitude: number; longitude: number } | null;
+  routeCoords: { latitude: number; longitude: number }[] | null;
 }) {
   return (
     <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32 }}>
@@ -657,21 +677,22 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
           </View>
         </View>
 
+        {/* Map showing route from user to pharmacy */}
         <MedicineSearchMapScreen
           drugName={drug.name}
           searchRadius={500}
           isSearching={false}
           onPharmacyFound={() => {}}
           showList={false}
+          userLocation={userLocation}
+          routeCoords={routeCoords}
         />
 
         <View style={[styles.timerCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
           <Feather name="clock" size={20} color={theme.primaryDark} />
           <View style={{ flex: 1, marginRight: Spacing.sm }}>
             <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>وقت الوصول المتوقع</ThemedText>
-            <ThemedText type="h3" style={{ color: theme.primaryDark, fontWeight: "800", textAlign: "right" }}>
-              {deliveryMinutes} دقيقة
-            </ThemedText>
+            <ThemedText type="h3"     style={{ color: theme.primaryDark, fontWeight: "800", textAlign: "right" }}>{deliveryMinutes} دقيقة</ThemedText>
           </View>
           <ThemedText type="caption" style={{ color: theme.textSecondary }}>+10 دقائق احتياطي</ThemedText>
         </View>
@@ -683,11 +704,7 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
             </ThemedText>
             <View style={styles.extendBtns}>
               {[10, 15, 20].map((m) => (
-                <Pressable
-                  key={m}
-                  onPress={() => onExtend(m)}
-                  style={[styles.extendBtn, { borderColor: theme.primaryDark, backgroundColor: addAlpha(theme.primaryDark, 0.07) }]}
-                >
+                <Pressable key={m} onPress={() => onExtend(m)} style={[styles.extendBtn, { borderColor: theme.primaryDark, backgroundColor: addAlpha(theme.primaryDark, 0.07) }]}>
                   <ThemedText type="caption" style={{ color: theme.primaryDark, fontWeight: "700" }}>+{m} د</ThemedText>
                 </Pressable>
               ))}
@@ -711,7 +728,9 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
   );
 }
 
-function StepRate({ pharmacy, rating, onRate, onSubmit, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+// ── Step: rate ────────────────────────────────────────────────────────────────
+
+function StepRate({ pharmacy, rating, onRate, onSubmit, theme, cardBg, subtleBorder, insets }: BaseProps & {
   pharmacy: FoundPharmacy;
   rating: number;
   onRate: (v: number) => void;
@@ -733,21 +752,12 @@ function StepRate({ pharmacy, rating, onRate, onSubmit, theme, isDark, cardBg, s
         <View style={styles.starsRow}>
           {[1, 2, 3, 4, 5].map((star) => (
             <Pressable key={star} onPress={() => onRate(star)}>
-              <Feather
-                name="star"
-                size={40}
-                color={star <= rating ? theme.warning : addAlpha(theme.textSecondary, 0.3)}
-                style={{ margin: 4 }}
-              />
+              <Feather name="star" size={40} color={star <= rating ? theme.warning : addAlpha(theme.textSecondary, 0.3)} style={{ margin: 4 }} />
             </Pressable>
           ))}
         </View>
 
-        <Pressable
-          onPress={onSubmit}
-          disabled={rating === 0}
-          style={({ pressed }) => [styles.submitBtn, { opacity: rating === 0 ? 0.45 : pressed ? 0.88 : 1 }]}
-        >
+        <Pressable onPress={onSubmit} disabled={rating === 0} style={({ pressed }) => [styles.submitBtn, { opacity: rating === 0 ? 0.45 : pressed ? 0.88 : 1 }]}>
           <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
             <ThemedText type="body" style={{ color: "#fff", fontWeight: "800" }}>
               {rating === 0 ? "اختر تقييمك" : "تأكيد التقييم"}
@@ -759,43 +769,53 @@ function StepRate({ pharmacy, rating, onRate, onSubmit, theme, isDark, cardBg, s
   );
 }
 
-function Counter({ value, onChange, min = 1, max = 99 }: { value: number; onChange: (v: number) => void; min?: number; max?: number }) {
+// ── Counter helper ────────────────────────────────────────────────────────────
+
+function Counter({ value, onChange, min = 1, max = 99, step = 1 }: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
   const { theme } = useTheme();
   return (
     <View style={styles.counterRow}>
-      <Pressable
-        onPress={() => onChange(Math.max(min, value - 1))}
-        style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}
-      >
+      <Pressable onPress={() => onChange(Math.max(min, value - step))} style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
         <Feather name="minus" size={16} color={theme.primaryDark} />
       </Pressable>
-      <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", minWidth: 40, textAlign: "center" }}>
+      <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", minWidth: 44, textAlign: "center" }}>
         {value}
       </ThemedText>
-      <Pressable
-        onPress={() => onChange(Math.min(max, value + 1))}
-        style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}
-      >
+      <Pressable onPress={() => onChange(Math.min(max, value + step))} style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
         <Feather name="plus" size={16} color={theme.primaryDark} />
       </Pressable>
     </View>
   );
 }
 
-function StepDoses({ drug, dailyDoses, pillsPerDose, totalPills, isChronic, daysSupply, endDate, onDailyDoses, onPillsPerDose, onTotalPills, onChronic, onSave, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+// ── Step: doses ────────────────────────────────────────────────────────────────
+
+function StepDoses({ drug, dailyDoses, pillsPerDose, pillsInBox, isChronic, daysSupply, endDate, onDailyDoses, onPillsPerDose, onPillsInBox, onChronic, onSave, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   drug: DrugInfo;
   dailyDoses: number;
   pillsPerDose: number;
-  totalPills: number;
+  pillsInBox: number;
   isChronic: boolean;
   daysSupply: number | null;
   endDate: string | null;
   onDailyDoses: (v: number) => void;
   onPillsPerDose: (v: number) => void;
-  onTotalPills: (v: number) => void;
+  onPillsInBox: (v: number) => void;
   onChronic: (v: boolean) => void;
   onSave: () => void;
 }) {
+  const rows = [
+    { label: "كم مرة يومياً؟",    value: dailyDoses,   onChange: onDailyDoses,   min: 1, max: 10, step: 1 },
+    { label: "كم قرص في المرة؟",  value: pillsPerDose, onChange: onPillsPerDose, min: 1, max: 10, step: 1 },
+    { label: "كم قرص في العلبة؟", value: pillsInBox,   onChange: onPillsInBox,   min: 5, max: 200, step: 5 },
+  ];
+
   return (
     <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32 }}>
       <Animated.View entering={FadeInUp.duration(400)}>
@@ -804,13 +824,9 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, totalPills, isChronic, days
         </ThemedText>
 
         <View style={[styles.doseCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
-          {[
-            { label: "كم مرة يومياً؟", value: dailyDoses, setter: onDailyDoses },
-            { label: "كم قرص في المرة؟", value: pillsPerDose, setter: onPillsPerDose },
-            { label: "إجمالي الأقراص؟", value: totalPills, setter: (v: number) => onTotalPills(v * 5), note: `× 5 = ${totalPills}` },
-          ].map((item, i) => (
+          {rows.map((item, i) => (
             <View key={item.label} style={[styles.doseRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: subtleBorder }]}>
-              <Counter value={item.label === "إجمالي الأقراص؟" ? totalPills / 5 : item.value} onChange={item.setter} min={1} max={item.label === "إجمالي الأقراص؟" ? 20 : 10} />
+              <Counter value={item.value} onChange={item.onChange} min={item.min} max={item.max} step={item.step} />
               <ThemedText type="body" style={{ color: theme.text, fontWeight: "700", textAlign: "right", flex: 1 }}>
                 {item.label}
               </ThemedText>
@@ -830,6 +846,7 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, totalPills, isChronic, days
           </View>
         </View>
 
+        {/* Auto-calculated days supply */}
         {!isChronic && daysSupply != null && (
           <Animated.View entering={FadeIn.duration(300)} style={[styles.endDateCard, { backgroundColor: addAlpha(theme.primaryDark, 0.07), borderColor: addAlpha(theme.primaryDark, 0.2) }]}>
             <Feather name="calendar" size={18} color={theme.primaryDark} />
@@ -838,7 +855,7 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, totalPills, isChronic, days
                 ينتهي الدواء في: {endDate}
               </ThemedText>
               <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>
-                ({daysSupply} يوم · سنذكّرك قبل يوم)
+                ({daysSupply} يوم · {pillsInBox} قرص ÷ {dailyDoses}×{pillsPerDose}/يوم)
               </ThemedText>
             </View>
           </Animated.View>
@@ -855,7 +872,9 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, totalPills, isChronic, days
   );
 }
 
-function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMyMeds, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+// ── Step: done ────────────────────────────────────────────────────────────────
+
+function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMyMeds, theme, cardBg, subtleBorder, insets }: BaseProps & {
   drug: DrugInfo | null;
   pharmacy: FoundPharmacy | null;
   daysSupply: number | null;
@@ -881,9 +900,9 @@ function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMy
 
         {drug && (
           <View style={[styles.doneSummary, { backgroundColor: cardBg, borderColor: subtleBorder, width: "100%" }]}>
-            <SummaryRow label="الدواء" value={drug.name} theme={theme} />
-            {pharmacy && <SummaryRow label="الصيدلية" value={pharmacy.name} theme={theme} />}
-            {daysSupply && !isChronic && <SummaryRow label="الأمداد" value={`${daysSupply} يوم`} theme={theme} />}
+            <SummaryRow label="الدواء"    value={drug.name}        theme={theme} subtleBorder={subtleBorder} />
+            {pharmacy    && <SummaryRow label="الصيدلية" value={pharmacy.name}   theme={theme} subtleBorder={subtleBorder} />}
+            {daysSupply  && !isChronic && <SummaryRow label="الأمداد"  value={`${daysSupply} يوم`} theme={theme} subtleBorder={subtleBorder} />}
           </View>
         )}
 
@@ -903,341 +922,90 @@ function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMy
   );
 }
 
-function SummaryRow({ label, value, theme }: { label: string; value: string; theme: ReturnType<typeof useTheme>["theme"] }) {
+function SummaryRow({ label, value, theme, subtleBorder }: {
+  label: string; value: string;
+  theme: ReturnType<typeof useTheme>["theme"];
+  subtleBorder: string;
+}) {
   return (
-    <View style={styles.summaryRow}>
-      <ThemedText type="small" style={{ color: theme.text, fontWeight: "700" }}>{value}</ThemedText>
+    <View style={[styles.summaryRow, { borderBottomColor: subtleBorder }]}>
+      <ThemedText type="small"   style={{ color: theme.text,          fontWeight: "700" }}>{value}</ThemedText>
       <ThemedText type="caption" style={{ color: theme.textSecondary }}>{label}</ThemedText>
     </View>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
   headerBtn: { padding: Spacing.xs, width: 36 },
-  searchCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    padding: Spacing.md,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    overflow: "hidden",
-    height: 52,
-  },
-  inputSearchBtn: {
-    width: 52,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  textInput: {
-    flex: 1,
-    paddingHorizontal: Spacing.md,
-    fontFamily: "Cairo-Regular",
-    fontSize: 15,
-    height: 52,
-  },
-  orRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: Spacing.lg,
-  },
+
+  searchCard: { borderRadius: BorderRadius.lg, borderWidth: 1, padding: Spacing.md },
+  inputRow:   { flexDirection: "row", alignItems: "center", borderRadius: BorderRadius.md, borderWidth: 1, overflow: "hidden", height: 52 },
+  inputSearchBtn: { width: 52, height: 52, alignItems: "center", justifyContent: "center" },
+  textInput:  { flex: 1, paddingHorizontal: Spacing.md, fontFamily: "Cairo-Regular", fontSize: 15, height: 52 },
+
+  orRow:  { flexDirection: "row", alignItems: "center", marginVertical: Spacing.lg },
   orLine: { flex: 1, height: StyleSheet.hairlineWidth },
+
   imagePickRow: { flexDirection: "row", gap: Spacing.md },
-  imagePickBtn: {
-    flex: 1,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  imagePickGrad: {
-    paddingVertical: Spacing.xl,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  recognizingCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: Spacing.lg,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-  },
-  drugCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  drugCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-  },
-  drugIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: BorderRadius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  drugImage: { width: 72, height: 72, borderRadius: BorderRadius.md },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.sm,
-  },
-  confirmBtns: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginTop: Spacing.lg,
-  },
-  changeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    gap: 4,
-  },
-  confirmGrad: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.full,
-    gap: 4,
-  },
-  compactDrugRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    gap: Spacing.sm,
-  },
-  compactDrugIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radiusRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    flexWrap: "wrap",
-  },
-  radiusBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  searchActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  actionGrad: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    gap: 6,
-  },
-  cancelSmallBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  deliveryCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  timerCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  extendRow: { marginTop: Spacing.md },
-  extendBtns: { flexDirection: "row", gap: Spacing.sm },
-  extendBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  deliveryActions: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginTop: Spacing.lg,
-    alignItems: "center",
-  },
-  cancelBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  rateIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: Spacing.xl,
-  },
-  starsRow: {
-    flexDirection: "row",
-    marginTop: Spacing.xl,
-    marginBottom: Spacing.xl,
-  },
+  imagePickBtn: { flex: 1, borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
+  imagePickGrad:{ paddingVertical: Spacing.xl, alignItems: "center", justifyContent: "center" },
+
+  recognizingCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: Spacing.lg, padding: Spacing.md, borderRadius: BorderRadius.lg },
+
+  drugCard:       { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
+  drugCardHeader: { flexDirection: "row", alignItems: "center", padding: Spacing.md },
+  drugIconWrap:   { width: 72, height: 72, borderRadius: BorderRadius.md, alignItems: "center", justifyContent: "center" },
+  drugImage:      { width: 72, height: 72, borderRadius: BorderRadius.md },
+  infoRow:        { flexDirection: "row", alignItems: "flex-start", padding: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth },
+
+  confirmBtns: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.lg },
+  changeBtn:   { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1, gap: 4 },
+  confirmGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.full, gap: 4 },
+
+  compactDrugRow:  { flexDirection: "row", alignItems: "center", padding: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1, gap: Spacing.sm },
+  compactDrugIcon: { width: 36, height: 36, borderRadius: BorderRadius.sm, alignItems: "center", justifyContent: "center" },
+
+  radiusRow: { flexDirection: "row", gap: Spacing.sm, flexWrap: "wrap" },
+  radiusBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, borderRadius: BorderRadius.full, borderWidth: 1 },
+
+  searchActions:   { flexDirection: "row", alignItems: "center", marginTop: Spacing.md, gap: Spacing.sm },
+  actionGrad:      { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.md, borderRadius: BorderRadius.full, gap: 6 },
+  cancelSmallBtn:  { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
+
+  deliveryCard:    { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1.5, marginBottom: Spacing.md, gap: Spacing.sm },
+  timerCard:       { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1, marginTop: Spacing.md, gap: Spacing.sm },
+  extendRow:       { marginTop: Spacing.md },
+  extendBtns:      { flexDirection: "row", gap: Spacing.sm },
+  extendBtn:       { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
+  deliveryActions: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.lg, alignItems: "center" },
+  cancelBtn:       { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
+
+  rateIcon:  { width: 100, height: 100, borderRadius: 50, alignItems: "center", justifyContent: "center", marginTop: Spacing.xl },
+  starsRow:  { flexDirection: "row", marginTop: Spacing.xl, marginBottom: Spacing.xl },
   submitBtn: { width: "100%", marginTop: Spacing.md },
-  doseCard: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  doseRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-  },
+
+  doseCard: { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
+  doseRow:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: Spacing.md, paddingHorizontal: Spacing.md },
   counterRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
-  counterBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toggle: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: "center",
-  },
-  toggleThumb: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#fff",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  endDateCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  doneIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: Spacing.xl,
-  },
-  doneSummary: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginTop: Spacing.lg,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  homeBtn: {
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: Spacing.lg,
-    paddingBottom: 40,
-  },
-  reasonRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    marginBottom: Spacing.sm,
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioInner: { width: 10, height: 10, borderRadius: 5 },
-  customReasonInput: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    minHeight: 80,
-    fontFamily: "Cairo-Regular",
-    marginBottom: Spacing.md,
-    textAlignVertical: "top",
-  },
-  modalBtns: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginTop: Spacing.md,
-  },
-  modalBtn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    alignItems: "center",
-  },
+  counterBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  toggle:     { width: 48, height: 28, borderRadius: 14, justifyContent: "center" },
+  toggleThumb:{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 2, elevation: 2 },
+  endDateCard:{ flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1, marginTop: Spacing.md, gap: Spacing.sm },
+
+  doneIcon:    { width: 120, height: 120, borderRadius: 60, alignItems: "center", justifyContent: "center", marginTop: Spacing.xl },
+  doneSummary: { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden", marginTop: Spacing.lg },
+  summaryRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
+  homeBtn:     { paddingVertical: Spacing.md, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center" },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalSheet:   { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, paddingBottom: 40 },
+  reasonRow:    { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing.sm },
+  radioOuter:   { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  radioInner:   { width: 10, height: 10, borderRadius: 5 },
+  customReasonInput: { borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md, minHeight: 80, fontFamily: "Cairo-Regular", marginBottom: Spacing.md, textAlignVertical: "top" },
+  modalBtns:    { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.md },
+  modalBtn:     { flex: 1, paddingVertical: Spacing.md, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center" },
 });
