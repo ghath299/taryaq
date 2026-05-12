@@ -6,10 +6,7 @@ const router = Router();
 
 // ─── Gemini drug recognition ──────────────────────────────────────────────────
 
-async function recognizeWithGemini(
-  medicationName?: string,
-  imageBase64?: string,
-): Promise<{
+interface GeminiResult {
   name: string;
   manufacturer: string;
   usage: string;
@@ -17,9 +14,22 @@ async function recognizeWithGemini(
   activeIngredient: string;
   sideEffects: string;
   confidence: number;
-} | null> {
+}
+
+// hardFail = true  → key is invalid/unauthorised  → show error to user
+// hardFail = false → quota exceeded / network / parse → fall back to mock silently
+interface GeminiOutcome {
+  data:      GeminiResult | null;
+  hardFail:  boolean;
+  failReason?: string;
+}
+
+async function recognizeWithGemini(
+  medicationName?: string,
+  imageBase64?: string,
+): Promise<GeminiOutcome> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { data: null, hardFail: false };
 
   const parts: object[] = [];
 
@@ -52,26 +62,32 @@ async function recognizeWithGemini(
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
       logger.error({ status: resp.status, body: errText.slice(0, 200) }, "Gemini API HTTP error");
-      return null;
+
+      // 401 / 403 = invalid or revoked key → hard fail (user must fix the key)
+      if (resp.status === 401 || resp.status === 403) {
+        return { data: null, hardFail: true, failReason: "مفتاح Gemini غير صالح أو منتهي الصلاحية. يرجى تحديث المفتاح." };
+      }
+      // 429 = quota exceeded → soft fail → use mock
+      return { data: null, hardFail: false, failReason: `Gemini HTTP ${resp.status}` };
     }
 
-    const data = (await resp.json()) as {
+    const geminiData = (await resp.json()) as {
       candidates?: Array<{ content: { parts: Array<{ text: string }> } }>;
       error?: { message: string };
     };
 
-    if (data.error) {
-      logger.error({ geminiError: data.error.message }, "Gemini API returned error object");
-      return null;
+    if (geminiData.error) {
+      logger.error({ geminiError: geminiData.error.message }, "Gemini API returned error object");
+      return { data: null, hardFail: false, failReason: geminiData.error.message };
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     logger.info({ rawText: text.slice(0, 300) }, "Gemini raw response");
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       logger.warn({ text: text.slice(0, 200) }, "Gemini response contained no JSON");
-      return null;
+      return { data: null, hardFail: false, failReason: "no JSON in Gemini response" };
     }
 
     const parsed = JSON.parse(jsonMatch[0]) as {
@@ -86,17 +102,20 @@ async function recognizeWithGemini(
     logger.info({ name: parsed.name }, "Gemini recognition success");
 
     return {
-      name:             parsed.name ?? medicationName ?? "Unknown",
-      manufacturer:     parsed.manufacturer ?? "Unknown",
-      usage:            parsed.usage ?? "",
-      dosage:           parsed.dosage ?? "",
-      activeIngredient: parsed.activeIngredient ?? "",
-      sideEffects:      parsed.sideEffects ?? "",
-      confidence:       imageBase64 ? 0.92 : 0.97,
+      data: {
+        name:             parsed.name ?? medicationName ?? "Unknown",
+        manufacturer:     parsed.manufacturer ?? "Unknown",
+        usage:            parsed.usage ?? "",
+        dosage:           parsed.dosage ?? "",
+        activeIngredient: parsed.activeIngredient ?? "",
+        sideEffects:      parsed.sideEffects ?? "",
+        confidence:       imageBase64 ? 0.92 : 0.97,
+      },
+      hardFail: false,
     };
   } catch (err) {
     logger.error({ err }, "Gemini recognition exception");
-    return null;
+    return { data: null, hardFail: false, failReason: "network/exception" };
   }
 }
 
@@ -204,23 +223,27 @@ router.post("/search", async (req: Request, res: Response) => {
     return res.status(400).json({ message: "اسم الدواء أو صورته مطلوب" });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const { data: geminiData, hardFail, failReason } = await recognizeWithGemini(medicationName, cleanBase64);
 
-  if (apiKey) {
-    // Key is configured — try Gemini; return error if it fails (no silent fallback)
-    const result = await recognizeWithGemini(medicationName, cleanBase64);
-    if (result) {
-      return res.json({ ...result, medicationName: result.name });
-    }
-    req.log.warn({ medicationName, hasImage: !!cleanBase64 }, "Gemini failed with key set — returning error");
+  if (geminiData) {
+    return res.json({ ...geminiData, medicationName: geminiData.name });
+  }
+
+  if (hardFail) {
+    // Invalid / revoked key — user must fix this, don't mask with mock data
+    req.log.warn({ failReason }, "Gemini hard fail — returning error to client");
     return res.status(503).json({
-      error: "تعذّر التعرف على الدواء عبر Gemini AI. تأكد من صلاحية المفتاح أو حاول مجدداً.",
-      code:  "GEMINI_FAILED",
+      error:  failReason ?? "مفتاح Gemini غير صالح. يرجى تحديث المفتاح.",
+      code:   "GEMINI_AUTH_FAILED",
     });
   }
 
-  // No key configured — dev/demo mode: use mock data
-  req.log.info("GEMINI_API_KEY not set — using mock data");
+  // Soft fail (quota exceeded, network, no key) — fall back to mock data transparently
+  if (failReason) {
+    req.log.warn({ failReason }, "Gemini soft fail — falling back to mock data");
+  } else {
+    req.log.info("GEMINI_API_KEY not set — using mock data");
+  }
   const key   = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
   const found = Object.keys(MOCK_DRUGS).find((k) => k !== "default" && key.includes(k));
   const info  = found ? MOCK_DRUGS[found] : MOCK_DRUGS.default;
