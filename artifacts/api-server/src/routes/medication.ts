@@ -76,6 +76,9 @@ async function recognizeWithGemini(
       error?: { message: string };
     };
 
+    // ── Debug: log full Gemini response before processing ──
+    console.log("GEMINI_FULL_RESPONSE:", JSON.stringify(geminiData, null, 2));
+
     if (geminiData.error) {
       logger.error({ geminiError: geminiData.error.message }, "Gemini API returned error object");
       return { data: null, hardFail: false, failReason: geminiData.error.message };
@@ -199,6 +202,10 @@ const MOCK_DRUGS: Record<
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 router.post("/search", async (req: Request, res: Response) => {
+  // ── Debug: verify key presence ──
+  console.log("GEMINI_KEY exists:", !!process.env.GEMINI_API_KEY);
+  console.log("GEMINI_KEY prefix:", process.env.GEMINI_API_KEY?.substring(0, 10));
+
   const { medicationName, imageBase64 } = req.body as {
     medicationName?: string;
     imageBase64?: string;
