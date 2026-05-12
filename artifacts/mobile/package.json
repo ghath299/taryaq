@@ -63,6 +63,7 @@
     "expo-screen-capture": "~8.0.9",
     "expo-secure-store": "~15.0.8",
     "firebase": "^12.12.1",
-    "react-native-maps": "^1.27.2"
+    "react-native-maps": "^1.27.2",
+    "react-native-webview": "^13.16.1"
   }
 }

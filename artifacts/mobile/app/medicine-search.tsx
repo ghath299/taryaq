@@ -123,15 +123,18 @@ export default function MedicineSearchScreen() {
     ? new Date(Date.now() + daysSupply * 86400000).toLocaleDateString("ar-IQ")
     : null;
 
-  // ── Drug recognition via API (Gemini or fallback) ──────────────────────────
+  // ── Drug recognition via API (Gemini or mock fallback) ──────────────────────
   const recognizeDrug = useCallback(
     async (name: string, imageUri?: string, imageBase64?: string) => {
       if (!name.trim() && !imageBase64) return;
       setIsRecognizing(true);
       try {
         const body: Record<string, string> = {};
-        if (name.trim())  body.medicationName = name.trim();
-        if (imageBase64)  body.imageBase64    = imageBase64;
+        if (name.trim()) body.medicationName = name.trim();
+        if (imageBase64) {
+          // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,")
+          body.imageBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
+        }
 
         const resp = await fetch(`${getApiUrl()}/api/medication/search`, {
           method:  "POST",
@@ -139,16 +142,28 @@ export default function MedicineSearchScreen() {
           body:    JSON.stringify(body),
         });
 
-        if (!resp.ok) throw new Error("server error");
-
-        const data = await resp.json() as {
+        let data: {
           name?: string;
           medicationName?: string;
           manufacturer?: string;
           usage?: string;
           dosage?: string;
           activeIngredient?: string;
+          error?: string;
+          message?: string;
+          code?: string;
         };
+
+        try {
+          data = await resp.json();
+        } catch {
+          throw new Error("لم نتمكن من قراءة رد الخادم. تأكد من الاتصال وأعد المحاولة.");
+        }
+
+        if (!resp.ok) {
+          // Surface the server's specific error message
+          throw new Error(data.error ?? data.message ?? `خطأ في الخادم (${resp.status})`);
+        }
 
         setDrugInfo({
           name:             data.name ?? data.medicationName ?? name,
@@ -159,8 +174,9 @@ export default function MedicineSearchScreen() {
           imageUri,
         });
         setStep("confirm");
-      } catch {
-        Alert.alert("خطأ", "تعذّر التعرف على الدواء. تأكد من الاتصال وأعد المحاولة.");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "تعذّر التعرف على الدواء. تأكد من الاتصال وأعد المحاولة.";
+        Alert.alert("خطأ في التعرف على الدواء", msg, [{ text: "حسناً" }]);
       } finally {
         setIsRecognizing(false);
       }

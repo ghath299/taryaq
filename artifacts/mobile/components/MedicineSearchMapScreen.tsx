@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, StyleSheet, Platform } from "react-native";
+import { WebView } from "react-native-webview";
 import * as Haptics from "expo-haptics";
 import Animated, {
   useSharedValue,
@@ -10,34 +11,16 @@ import Animated, {
   withDelay,
   Easing,
   cancelAnimation,
-  runOnJS,
 } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { addAlpha } from "@/constants/colors";
 
-// react-native-maps is only available on native
-let MapView: React.ComponentType<any> | null = null;
-let Marker: React.ComponentType<any> | null = null;
-let UrlTile: React.ComponentType<any> | null = null;
-let Polyline: React.ComponentType<any> | null = null;
-let Circle: React.ComponentType<any> | null = null;
-
-if (Platform.OS !== "web") {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const maps = require("react-native-maps");
-  MapView = maps.default;
-  Marker = maps.Marker;
-  UrlTile = maps.UrlTile;
-  Polyline = maps.Polyline;
-  Circle = maps.Circle;
-}
-
-// Baghdad city centre — default when location permission is denied
+// Baghdad city centre — fallback when location permission is denied
 const BAGHDAD = { latitude: 33.3152, longitude: 44.3661 };
 
-// Bearings (degrees) for each mock pharmacy relative to user
+// Bearings (degrees from north) for each pharmacy relative to user
 const PHARMACY_BEARINGS: Record<string, number> = {
   p1: 45,   // NE
   p2: 90,   // E
@@ -77,7 +60,6 @@ export interface MapPharmacy {
   id: string;
   name: string;
   address: string;
-  hours: string;
   distanceM: number;
   rating: number;
   isAvailable: boolean;
@@ -93,14 +75,58 @@ export interface FoundPharmacy extends MapPharmacy {
 }
 
 const MOCK_PHARMACIES: MapPharmacy[] = [
-  { id: "p1", name: "صيدلية الشفاء",    address: "شارع فلسطين، مقابل جامع الزهراء",       hours: "مفتوحة 24 ساعة",      distanceM: 210, rating: 4.8, isAvailable: true,  x: 0.20, y: 0.28, status: "waiting" },
-  { id: "p2", name: "صيدلية الحياة",    address: "شارع الصناعة، قرب الدفاع المدني",      hours: "مفتوحة حتى 11 م",     distanceM: 340, rating: 4.5, isAvailable: true,  x: 0.78, y: 0.22, status: "waiting" },
-  { id: "p3", name: "صيدلية الأمل",     address: "شارع النضال، مقابل مطعم الخليج",       hours: "مفتوحة حتى 12 ص",     distanceM: 430, rating: 4.2, isAvailable: false, x: 0.30, y: 0.78, status: "waiting" },
-  { id: "p4", name: "صيدلية النور",     address: "حي الكرادة، قرب البريد",                hours: "مفتوحة حتى 10 م",     distanceM: 480, rating: 4.7, isAvailable: true,  x: 0.72, y: 0.74, status: "waiting" },
-  { id: "p5", name: "صيدلية البركة",   address: "شارع الرشيد، قرب المصرف",               hours: "مفتوحة حتى 9 م",      distanceM: 490, rating: 4.3, isAvailable: true,  x: 0.50, y: 0.12, status: "waiting" },
+  { id: "p1", name: "صيدلية الشفاء",  address: "شارع فلسطين، الكرادة",         distanceM: 210, rating: 4.8, isAvailable: true,  x: 0.20, y: 0.28, status: "waiting" },
+  { id: "p2", name: "صيدلية الحياة",  address: "شارع الصناعة، المنصور",        distanceM: 340, rating: 4.5, isAvailable: true,  x: 0.78, y: 0.22, status: "waiting" },
+  { id: "p3", name: "صيدلية الأمل",   address: "شارع النضال، الجادرية",        distanceM: 430, rating: 4.2, isAvailable: false, x: 0.30, y: 0.78, status: "waiting" },
+  { id: "p4", name: "صيدلية النور",   address: "حي الكرادة الداخلية",           distanceM: 480, rating: 4.7, isAvailable: true,  x: 0.72, y: 0.74, status: "waiting" },
+  { id: "p5", name: "صيدلية البركة", address: "شارع الرشيد، باب المعظم",       distanceM: 490, rating: 4.3, isAvailable: true,  x: 0.50, y: 0.12, status: "waiting" },
 ];
 
 const FIRST_AVAILABLE_ID = "p1";
+
+// ── Leaflet HTML generator ─────────────────────────────────────────────────────
+
+function buildLeafletHtml(
+  lat: number,
+  lng: number,
+  radius: number,
+  pharmacies: Array<{ id: string; name: string; lat: number; lng: number }>,
+): string {
+  const phJson = JSON.stringify(pharmacies);
+  return `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body,#map{height:100%;width:100%;background:#e8f4fd}
+.ud{width:16px;height:16px;background:#1F40C8;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(31,64,200,.5)}
+.pm{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2.5px solid rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.3);font-size:16px}
+.leaflet-control-zoom{border:none!important;box-shadow:0 2px 8px rgba(0,0,0,.15)!important}
+.leaflet-control-zoom a{border-radius:8px!important;background:rgba(255,255,255,.95)!important;color:#333!important;font-weight:bold!important;width:30px!important;height:30px!important;line-height:30px!important;margin-bottom:2px!important}
+.leaflet-tooltip{background:rgba(255,255,255,.95);border:none;border-radius:8px;font-size:12px;font-weight:bold;color:#1F40C8;box-shadow:0 2px 8px rgba(0,0,0,.2);padding:4px 8px}
+</style>
+</head><body><div id="map"></div><script>
+var COLORS={waiting:'#1F40C8',available:'#22C55E',unavailable:'#EF4444',timeout:'#9CA3AF'};
+var map=L.map('map',{zoomControl:true,attributionControl:false}).setView([${lat},${lng}],16);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,minZoom:8}).addTo(map);
+L.marker([${lat},${lng}],{icon:L.divIcon({className:'',html:'<div class="ud"></div>',iconSize:[16,16],iconAnchor:[8,8]}),zIndexOffset:1000}).addTo(map);
+L.circle([${lat},${lng}],{radius:${radius},color:'#5EDFFF',fillColor:'#5EDFFF',fillOpacity:.07,weight:2,dashArray:'6 5'}).addTo(map);
+var markers={};
+function mkIcon(s){var c=COLORS[s]||COLORS.waiting;return L.divIcon({className:'',html:'<div class="pm" style="background:'+c+'">+</div>',iconSize:[30,30],iconAnchor:[15,15]});}
+${phJson}.forEach(function(p){markers[p.id]=L.marker([p.lat,p.lng],{icon:mkIcon('waiting')}).addTo(map).bindTooltip(p.name,{permanent:false,direction:'top',offset:[0,-18]});});
+window.updateStatus=function(id,s){if(markers[id])markers[id].setIcon(mkIcon(s));};
+window.drawRoute=function(coords){
+  if(!coords||coords.length<2)return;
+  var pts=coords.map(function(c){return[c.latitude,c.longitude];});
+  L.polyline(pts,{color:'#1F40C8',weight:4,opacity:.85}).addTo(map);
+  try{map.fitBounds(L.polyline(pts).getBounds(),{padding:[30,30],maxZoom:16});}catch(e){}
+};
+</script></body></html>`;
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
   drugName: string;
@@ -123,20 +149,19 @@ export default function MedicineSearchMapScreen({
   const { theme, isDark } = useTheme();
   const [pharmacies, setPharmacies] = useState<MapPharmacy[]>(MOCK_PHARMACIES);
   const [foundId, setFoundId] = useState<string | null>(null);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [mapReady, setMapReady] = useState(false);
+  const webViewRef = useRef<WebView>(null);
+  const timersRef  = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const radarScale   = useSharedValue(0.4);
   const radarOpacity = useSharedValue(0);
-  const pinFade      = useSharedValue(0.5);
   const foundPulse   = useSharedValue(1);
 
-  const cardBg      = isDark ? theme.card : "#FFFFFF";
+  const cardBg       = isDark ? theme.card : "#FFFFFF";
   const subtleBorder = isDark ? "#21262D" : "#E5EEF5";
+  const centre       = userLocation ?? BAGHDAD;
 
-  // Centre the map on real user location or Baghdad fallback
-  const centre = userLocation ?? BAGHDAD;
-
-  // Compute real lat/lng for each pharmacy based on user's position
+  // Compute real lat/lng for each pharmacy from user's position
   const pharmacyCoords = useMemo(
     () =>
       MOCK_PHARMACIES.reduce<Record<string, { latitude: number; longitude: number }>>(
@@ -154,17 +179,78 @@ export default function MedicineSearchMapScreen({
     [centre.latitude, centre.longitude],
   );
 
+  // Build Leaflet HTML with real coordinates baked in
+  const mapHtml = useMemo(() => {
+    const phData = MOCK_PHARMACIES.map((p) => {
+      const c = pharmacyCoords[p.id] ?? { latitude: centre.latitude, longitude: centre.longitude };
+      return { id: p.id, name: p.name, lat: c.latitude, lng: c.longitude };
+    });
+    return buildLeafletHtml(centre.latitude, centre.longitude, searchRadius, phData);
+  }, [centre.latitude, centre.longitude, pharmacyCoords, searchRadius]);
+
+  // Rebuild map if user moves more than ~100 m (3 decimal places = ~111m)
+  const mapKey = `map-${Math.round(centre.latitude * 1000)}-${Math.round(centre.longitude * 1000)}-${searchRadius}`;
+
+  // Draw route when it arrives
+  useEffect(() => {
+    if (!routeCoords || !mapReady) return;
+    webViewRef.current?.injectJavaScript(`window.drawRoute(${JSON.stringify(routeCoords)}); true;`);
+  }, [routeCoords, mapReady]);
+
+  const injectStatus = useCallback((id: string, status: string) => {
+    webViewRef.current?.injectJavaScript(`window.updateStatus('${id}','${status}'); true;`);
+  }, []);
+
+  const stopRadar = useCallback(() => {
+    cancelAnimation(radarScale);
+    cancelAnimation(radarOpacity);
+    radarOpacity.value = withTiming(0, { duration: 300 });
+  }, [radarScale, radarOpacity]);
+
+  const handleFound = useCallback(
+    (id: string) => {
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setFoundId(id);
+      setPharmacies((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: "available" as const } : p)),
+      );
+      injectStatus(id, "available");
+      stopRadar();
+      foundPulse.value = withRepeat(
+        withSequence(
+          withTiming(1.7, { duration: 800, easing: Easing.out(Easing.ease) }),
+          withTiming(1, { duration: 800, easing: Easing.in(Easing.ease) }),
+        ),
+        -1,
+        false,
+      );
+      const found = MOCK_PHARMACIES.find((p) => p.id === id);
+      if (found) {
+        const coords =
+          pharmacyCoords[id] ??
+          offsetCoord(centre.latitude, centre.longitude, found.distanceM, PHARMACY_BEARINGS[id] ?? 0);
+        onPharmacyFound({
+          ...found,
+          status: "available",
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      }
+    },
+    [pharmacyCoords, centre, injectStatus, stopRadar, onPharmacyFound, foundPulse],
+  );
+
+  // Search simulation
   useEffect(() => {
     if (!isSearching) {
-      cancelAnimation(radarScale);
-      cancelAnimation(radarOpacity);
-      radarOpacity.value = withTiming(0, { duration: 300 });
+      stopRadar();
       return;
     }
 
     setPharmacies(MOCK_PHARMACIES);
     setFoundId(null);
-    pinFade.value = 0.5;
 
     radarScale.value = withRepeat(
       withTiming(1.1, { duration: 2200, easing: Easing.out(Easing.ease) }),
@@ -180,62 +266,37 @@ export default function MedicineSearchMapScreen({
       false,
     );
 
-    pinFade.value = withDelay(400, withTiming(1, { duration: 600 }));
+    const update = (id: string, status: PharmacyStatus) => {
+      setPharmacies((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status } : p)),
+      );
+      injectStatus(id, status);
+    };
 
-    const t1 = setTimeout(() => setPharmacies((prev) => prev.map((p) => p.id === "p2" ? { ...p, status: "unavailable" } : p)), 1200);
-    const t2 = setTimeout(() => setPharmacies((prev) => prev.map((p) => p.id === "p3" ? { ...p, status: "unavailable" } : p)), 2000);
-    const t3 = setTimeout(() => setPharmacies((prev) => prev.map((p) => p.id === "p5" ? { ...p, status: "timeout" } : p)), 2800);
+    const t1 = setTimeout(() => update("p2", "unavailable"), 1200);
+    const t2 = setTimeout(() => update("p3", "unavailable"), 2000);
+    const t3 = setTimeout(() => update("p5", "timeout"), 2800);
     const t4 = setTimeout(() => handleFound(FIRST_AVAILABLE_ID), 3500);
 
     timersRef.current = [t1, t2, t3, t4];
-
     return () => {
       timersRef.current.forEach(clearTimeout);
-      cancelAnimation(radarScale);
-      cancelAnimation(radarOpacity);
+      stopRadar();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSearching]);
 
-  const stopRadar = () => {
-    cancelAnimation(radarScale);
-    cancelAnimation(radarOpacity);
-    radarOpacity.value = withTiming(0, { duration: 300 });
-  };
-
-  const handleFound = (id: string) => {
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-    setFoundId(id);
-    setPharmacies((prev) => prev.map((p) => (p.id === id ? { ...p, status: "available" } : p)));
-    runOnJS(stopRadar)();
-    foundPulse.value = withRepeat(
-      withSequence(
-        withTiming(1.7, { duration: 800, easing: Easing.out(Easing.ease) }),
-        withTiming(1, { duration: 800, easing: Easing.in(Easing.ease) }),
-      ),
-      -1,
-      false,
-    );
-    const found = MOCK_PHARMACIES.find((p) => p.id === id);
-    if (found) {
-      const coords = pharmacyCoords[id] ?? offsetCoord(centre.latitude, centre.longitude, found.distanceM, PHARMACY_BEARINGS[id] ?? 0);
-      runOnJS(onPharmacyFound)({ ...found, status: "available", ...coords });
-    }
-  };
-
   const radarStyle     = useAnimatedStyle(() => ({ transform: [{ scale: radarScale.value }], opacity: radarOpacity.value }));
-  const pinFadeStyle   = useAnimatedStyle(() => ({ opacity: pinFade.value }));
   const foundPulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: foundPulse.value }], opacity: 0.35 }));
 
-  const checkedCount = useMemo(() => pharmacies.filter((p) => p.status !== "waiting").length, [pharmacies]);
+  const checkedCount = pharmacies.filter((p) => p.status !== "waiting").length;
   const radiusLabel  = searchRadius >= 1000
     ? `${(searchRadius / 1000).toFixed(searchRadius % 1000 === 0 ? 0 : 1)} كم`
     : `${searchRadius} متر`;
 
-  // Delta covers ~2.5× the search radius
-  const delta = Math.max((searchRadius / 111000) * 2.5, 0.005);
+  const badgeText = isSearching
+    ? foundId ? "✓ وجدنا صيدلية!" : `جارٍ البحث... (${checkedCount}/${pharmacies.length})`
+    : `نطاق ${radiusLabel}`;
 
   const dotColor = (p: MapPharmacy) =>
     p.status === "available"   ? theme.success
@@ -243,170 +304,113 @@ export default function MedicineSearchMapScreen({
     : p.status === "timeout"     ? "#888"
     : theme.primaryDark;
 
-  // ── Badge text ──────────────────────────────────────────────────────────────
-  const badgeText = isSearching
-    ? foundId ? "✓ وجدنا صيدلية!" : `جارٍ البحث... (${checkedCount}/${pharmacies.length})`
-    : `نطاق ${radiusLabel}`;
+  const statusLabel = (p: MapPharmacy) =>
+    p.status === "available"   ? "متاح ✓"
+    : p.status === "unavailable" ? "غير متاح"
+    : p.status === "timeout"     ? "لم يرد"
+    : "في الانتظار...";
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <View>
       <View style={[styles.mapWrap, { borderColor: subtleBorder }]}>
 
-        {/* ── Native: real OpenStreetMap via react-native-maps ── */}
-        {Platform.OS !== "web" && MapView && Marker && UrlTile && Circle && Polyline ? (
+        {Platform.OS !== "web" ? (
+          /* ── Native: real OpenStreetMap via WebView + Leaflet ─────────────── */
           <>
-            <MapView
+            <WebView
+              ref={webViewRef}
+              key={mapKey}
+              source={{ html: mapHtml }}
               style={StyleSheet.absoluteFillObject}
-              initialRegion={{
-                latitude: centre.latitude,
-                longitude: centre.longitude,
-                latitudeDelta: delta,
-                longitudeDelta: delta,
-              }}
-              region={{
-                latitude: centre.latitude,
-                longitude: centre.longitude,
-                latitudeDelta: delta,
-                longitudeDelta: delta,
-              }}
-              rotateEnabled={false}
-              pitchEnabled={false}
+              onLoad={() => setMapReady(true)}
+              originWhitelist={["*"]}
               scrollEnabled={false}
-              zoomEnabled={false}
-              showsUserLocation={false}
-              showsCompass={false}
-              showsScale={false}
-              toolbarEnabled={false}
-              liteMode={false}
-            >
-              {/* OpenStreetMap tiles */}
-              <UrlTile
-                urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                maximumZ={19}
-                shouldReplaceMapContent={true}
-                flipY={false}
-                tileCacheMaxAge={604800}
-              />
-
-              {/* Search radius circle */}
-              <Circle
-                center={{ latitude: centre.latitude, longitude: centre.longitude }}
-                radius={searchRadius}
-                strokeColor={addAlpha(theme.primary, 0.5)}
-                fillColor={addAlpha(theme.primary, 0.08)}
-                strokeWidth={1.5}
-              />
-
-              {/* Route polyline (delivery step) */}
-              {routeCoords && routeCoords.length >= 2 && (
-                <Polyline
-                  coordinates={routeCoords}
-                  strokeColor={theme.primaryDark}
-                  strokeWidth={3.5}
-                  lineDashPattern={[0]}
-                />
-              )}
-
-              {/* User dot */}
-              <Marker coordinate={{ latitude: centre.latitude, longitude: centre.longitude }} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-                <View style={styles.userDotOuter}>
-                  <View style={[styles.userDotInner, { backgroundColor: theme.primaryDark }]} />
-                </View>
-              </Marker>
-
-              {/* Pharmacy markers */}
-              {pharmacies.map((p) => {
-                const coords = pharmacyCoords[p.id];
-                if (!coords) return null;
-                const color = dotColor(p);
-                const isFound = p.id === foundId;
-                return (
-                  <Marker key={p.id} coordinate={coords} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-                    <View style={[styles.pin, { backgroundColor: color, borderWidth: isFound ? 2.5 : 0, borderColor: "#fff" }]}>
-                      <MaterialCommunityIcons name="hospital-box" size={13} color="#fff" />
-                    </View>
-                  </Marker>
-                );
-              })}
-            </MapView>
-
-            {/* Radar overlay (pointer-events none) */}
-            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.radarOverlay]}>
-              <View style={[styles.radarStaticRingOuter, { borderColor: addAlpha(theme.primary, 0.15) }]} />
-              <View style={[styles.radarStaticRingInner, { borderColor: addAlpha(theme.primary, 0.25) }]} />
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mixedContentMode="always"
+            />
+            {/* Radar animation overlay — pointer-events none so map is still interactive */}
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.radarCenter]}>
+              <View style={[styles.staticRingOuter, { borderColor: addAlpha(theme.primary, 0.18) }]} />
+              <View style={[styles.staticRingInner, { borderColor: addAlpha(theme.primary, 0.28) }]} />
               <Animated.View
-                style={[styles.radarPulse, { borderColor: theme.primary, backgroundColor: addAlpha(theme.primary, 0.07) }, radarStyle]}
+                style={[styles.radarPulse, { borderColor: theme.primary, backgroundColor: addAlpha(theme.primary, 0.06) }, radarStyle]}
               />
             </View>
           </>
         ) : (
-          /* ── Web / fallback: original animated drawing ── */
+          /* ── Web fallback: simple animated background (Leaflet needs iframe) */
           <>
-            <View style={[styles.mapLand,  { backgroundColor: isDark ? "#1A2434" : "#F3F8FE" }]} />
-            <View style={[styles.mapRiver, { backgroundColor: isDark ? "#0B2238" : "#CFE3F7" }]} />
-            <View style={[styles.mapRoadH, { backgroundColor: isDark ? "#243149" : "#FFFFFF" }]} />
-            <View style={[styles.mapRoadV, { backgroundColor: isDark ? "#243149" : "#FFFFFF" }]} />
-
-            <View pointerEvents="none" style={styles.radarCenter}>
-              <View style={[styles.radarStaticRingOuter, { borderColor: addAlpha(theme.primary, 0.15) }]} />
-              <View style={[styles.radarStaticRingInner, { borderColor: addAlpha(theme.primary, 0.25) }]} />
-              <Animated.View style={[styles.radarPulse, { borderColor: theme.primary, backgroundColor: addAlpha(theme.primary, 0.1) }, radarStyle]} />
-              <View style={styles.userDotOuter}>
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? "#1A2434" : "#E8F4FE" }]} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.radarCenter]}>
+              <View style={[styles.staticRingOuter, { borderColor: addAlpha(theme.primary, 0.18) }]} />
+              <View style={[styles.staticRingInner, { borderColor: addAlpha(theme.primary, 0.28) }]} />
+              <Animated.View
+                style={[styles.radarPulse, { borderColor: theme.primary, backgroundColor: addAlpha(theme.primary, 0.1) }, radarStyle]}
+              />
+              <View style={styles.userDotWrap}>
                 <View style={[styles.userDotInner, { backgroundColor: theme.primaryDark }]} />
               </View>
             </View>
-
             {pharmacies.map((p) => {
               const isFound = p.id === foundId;
               const color   = dotColor(p);
               return (
-                <Animated.View key={p.id} style={[styles.pinWrap, { left: `${p.x * 100}%`, top: `${p.y * 100}%` }, pinFadeStyle]} pointerEvents="none">
-                  {isFound && <Animated.View style={[styles.pinPulse, { backgroundColor: theme.success }, foundPulseStyle]} />}
+                <View
+                  key={p.id}
+                  style={[styles.webPinWrap, { left: `${p.x * 100}%` as unknown as number, top: `${p.y * 100}%` as unknown as number }]}
+                  pointerEvents="none"
+                >
+                  {isFound && (
+                    <Animated.View style={[styles.pinPulse, { backgroundColor: theme.success }, foundPulseStyle]} />
+                  )}
                   <View style={[styles.pin, { backgroundColor: color }]}>
                     <MaterialCommunityIcons name="hospital-box" size={13} color="#fff" />
                   </View>
-                </Animated.View>
+                </View>
               );
             })}
           </>
         )}
 
-        {/* Badge (always visible on top) */}
-        <View style={[styles.mapBadge, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
+        {/* Badge */}
+        <View style={[styles.badge, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
           <ThemedText type="caption" style={{ color: theme.primaryDark, fontWeight: "800" }}>
             {badgeText}
           </ThemedText>
         </View>
       </View>
 
-      {/* Pharmacy list */}
+      {/* Pharmacy list — no hours, just availability status */}
       {showList && (
         <View style={{ marginTop: 8 }}>
           {pharmacies.map((p) => {
-            const isFound       = p.id === foundId;
-            const statusColor   = p.status === "available" ? theme.success : p.status === "unavailable" ? theme.error : p.status === "timeout" ? "#888" : theme.warning;
-            const statusLabel   = p.status === "available" ? "متوفر ✓" : p.status === "unavailable" ? "غير متوفر" : p.status === "timeout" ? "لم يرد" : "في الانتظار...";
-
+            const isFound = p.id === foundId;
+            const color   = dotColor(p);
             return (
               <View
                 key={p.id}
                 style={[
                   styles.pharmacyRow,
-                  { backgroundColor: cardBg, borderColor: isFound ? theme.success : subtleBorder, borderWidth: isFound ? 1.5 : 1 },
+                  {
+                    backgroundColor: cardBg,
+                    borderColor:     isFound ? theme.success : subtleBorder,
+                    borderWidth:     isFound ? 1.5 : 1,
+                  },
                 ]}
               >
-                <View style={[styles.pharmacyDot, { backgroundColor: addAlpha(statusColor, 0.15) }]}>
-                  <MaterialCommunityIcons name="hospital-box" size={18} color={statusColor} />
+                <View style={[styles.pharmacyIcon, { backgroundColor: addAlpha(color, 0.15) }]}>
+                  <MaterialCommunityIcons name="hospital-box" size={18} color={color} />
                 </View>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                  <ThemedText type="small" style={{ color: theme.text, fontWeight: "800", textAlign: "right" }}>{p.name}</ThemedText>
-                  <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>
-                    {(p.distanceM / 1000).toFixed(2)} كم · {p.hours}
+                  <ThemedText type="small"   style={{ color: theme.text,          fontWeight: "800", textAlign: "right" }}>{p.name}</ThemedText>
+                  <ThemedText type="caption" style={{ color: theme.textSecondary,                    textAlign: "right" }}>
+                    {(p.distanceM / 1000).toFixed(2)} كم
                   </ThemedText>
                 </View>
-                <View style={[styles.statusTag, { backgroundColor: addAlpha(statusColor, 0.12) }]}>
-                  <ThemedText type="caption" style={{ color: statusColor, fontWeight: "700" }}>{statusLabel}</ThemedText>
+                <View style={[styles.statusTag, { backgroundColor: addAlpha(color, 0.12) }]}>
+                  <ThemedText type="caption" style={{ color, fontWeight: "700" }}>{statusLabel(p)}</ThemedText>
                 </View>
               </View>
             );
@@ -418,40 +422,28 @@ export default function MedicineSearchMapScreen({
 }
 
 const styles = StyleSheet.create({
-  mapWrap: {
-    height: 260,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: "hidden",
-    position: "relative",
-    backgroundColor: "#E8F0FE",
-  },
-  // Radar overlay centred in native map
-  radarOverlay: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  // Web fallback drawing layers
-  mapLand:  { ...StyleSheet.absoluteFillObject },
-  mapRiver: { position: "absolute", top: 0, bottom: 0, left: "55%", width: "10%", transform: [{ rotate: "12deg" }], borderRadius: 100 },
-  mapRoadH: { position: "absolute", left: 0, right: 0, top: "60%", height: 4, opacity: 0.85 },
-  mapRoadV: { position: "absolute", top: 0, bottom: 0, left: "30%", width: 4, opacity: 0.85 },
-  // Radar rings (shared web + native overlay)
-  radarCenter: { position: "absolute", left: "50%", top: "50%", width: 0, height: 0, alignItems: "center", justifyContent: "center" },
-  radarStaticRingOuter: { position: "absolute", width: 200, height: 200, borderRadius: 100, borderWidth: 1, transform: [{ translateX: -100 }, { translateY: -100 }] },
-  radarStaticRingInner: { position: "absolute", width: 110, height: 110, borderRadius: 55,  borderWidth: 1, transform: [{ translateX: -55 },  { translateY: -55 }]  },
-  radarPulse:           { position: "absolute", width: 220, height: 220, borderRadius: 110, borderWidth: 2, transform: [{ translateX: -110 }, { translateY: -110 }] },
-  // User location dot
-  userDotOuter: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", transform: [{ translateX: -10 }, { translateY: -10 }], shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
+  mapWrap: { height: 260, borderRadius: 16, borderWidth: 1, overflow: "hidden", position: "relative", backgroundColor: "#E8F4FE" },
+
+  // Radar rings — centred on the map (native overlay + web)
+  radarCenter: { alignItems: "center", justifyContent: "center" },
+  staticRingOuter: { position: "absolute", width: 200, height: 200, borderRadius: 100, borderWidth: 1, transform: [{ translateX: -100 }, { translateY: -100 }] },
+  staticRingInner: { position: "absolute", width: 110, height: 110, borderRadius: 55,  borderWidth: 1, transform: [{ translateX: -55 },  { translateY: -55 }]  },
+  radarPulse:      { position: "absolute", width: 220, height: 220, borderRadius: 110, borderWidth: 2, transform: [{ translateX: -110 }, { translateY: -110 }] },
+
+  // Web-only user dot
+  userDotWrap:  { position: "absolute", width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#fff", transform: [{ translateX: -10 }, { translateY: -10 }] },
   userDotInner: { width: 11, height: 11, borderRadius: 6 },
-  // Pharmacy pins
-  pinWrap:   { position: "absolute", width: 0, height: 0, alignItems: "center", justifyContent: "center" },
-  pinPulse:  { position: "absolute", width: 26, height: 26, borderRadius: 13, transform: [{ translateX: -13 }, { translateY: -13 }] },
-  pin:       { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 },
-  // Badge
-  mapBadge: { position: "absolute", top: 10, alignSelf: "center", left: "15%", right: "15%", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1, alignItems: "center" },
-  // List
-  pharmacyRow:   { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, marginBottom: 8 },
-  pharmacyDot:   { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  statusTag:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+
+  // Web-only pharmacy pins
+  webPinWrap: { position: "absolute", width: 0, height: 0, alignItems: "center", justifyContent: "center" },
+  pinPulse:   { position: "absolute", width: 26, height: 26, borderRadius: 13, transform: [{ translateX: -13 }, { translateY: -13 }] },
+  pin:        { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 },
+
+  // Overlay badge
+  badge: { position: "absolute", top: 10, alignSelf: "center", left: "12%", right: "12%", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1, alignItems: "center" },
+
+  // Pharmacy list
+  pharmacyRow:  { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, marginBottom: 8 },
+  pharmacyIcon: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  statusTag:    { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
 });

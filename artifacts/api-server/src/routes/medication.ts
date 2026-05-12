@@ -26,7 +26,7 @@ async function recognizeWithGemini(
   if (imageBase64) {
     parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64 } });
     parts.push({
-      text: `Identify this medication from the image. Return ONLY a JSON object (no markdown, no code fences) with exactly these fields: name (full trade name in English), manufacturer (company name), usage (in Arabic, 1-2 sentences), dosage (in Arabic, clear timing and quantity), activeIngredient (in Arabic), sideEffects (in Arabic, brief). If unidentifiable, set name to "غير معروف".`,
+      text: "Identify this medication from the image. Return ONLY a JSON object (no markdown, no code fences) with exactly these fields: name (full trade name in English), manufacturer (company name), usage (in Arabic, 1-2 sentences), dosage (in Arabic, clear timing and quantity), activeIngredient (in Arabic), sideEffects (in Arabic, brief). If unidentifiable, set name to \"غير معروف\".",
     });
   } else {
     parts.push({
@@ -35,27 +35,44 @@ async function recognizeWithGemini(
   }
 
   try {
+    logger.info(
+      { hasMedName: !!medicationName, hasImage: !!imageBase64, imageBytes: imageBase64?.length ?? 0 },
+      "calling Gemini API",
+    );
+
     const resp = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }] }),
+        body:    JSON.stringify({ contents: [{ parts }] }),
       },
     );
 
     if (!resp.ok) {
-      logger.warn({ status: resp.status }, "Gemini API returned error");
+      const errText = await resp.text().catch(() => "");
+      logger.error({ status: resp.status, body: errText.slice(0, 200) }, "Gemini API HTTP error");
       return null;
     }
 
     const data = (await resp.json()) as {
       candidates?: Array<{ content: { parts: Array<{ text: string }> } }>;
+      error?: { message: string };
     };
 
+    if (data.error) {
+      logger.error({ geminiError: data.error.message }, "Gemini API returned error object");
+      return null;
+    }
+
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    logger.info({ rawText: text.slice(0, 300) }, "Gemini raw response");
+
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
+    if (!jsonMatch) {
+      logger.warn({ text: text.slice(0, 200) }, "Gemini response contained no JSON");
+      return null;
+    }
 
     const parsed = JSON.parse(jsonMatch[0]) as {
       name?: string;
@@ -66,17 +83,19 @@ async function recognizeWithGemini(
       sideEffects?: string;
     };
 
+    logger.info({ name: parsed.name }, "Gemini recognition success");
+
     return {
-      name: parsed.name ?? medicationName ?? "Unknown",
-      manufacturer: parsed.manufacturer ?? "Unknown",
-      usage: parsed.usage ?? "",
-      dosage: parsed.dosage ?? "",
+      name:             parsed.name ?? medicationName ?? "Unknown",
+      manufacturer:     parsed.manufacturer ?? "Unknown",
+      usage:            parsed.usage ?? "",
+      dosage:           parsed.dosage ?? "",
       activeIngredient: parsed.activeIngredient ?? "",
-      sideEffects: parsed.sideEffects ?? "",
-      confidence: imageBase64 ? 0.92 : 0.97,
+      sideEffects:      parsed.sideEffects ?? "",
+      confidence:       imageBase64 ? 0.92 : 0.97,
     };
   } catch (err) {
-    logger.error({ err }, "Gemini recognition failed");
+    logger.error({ err }, "Gemini recognition exception");
     return null;
   }
 }
@@ -96,17 +115,9 @@ async function getStreetRoute(
     const resp = await fetch(
       "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: apiKey,
-        },
-        body: JSON.stringify({
-          coordinates: [
-            [fromLng, fromLat],
-            [toLng, toLat],
-          ],
-        }),
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: apiKey },
+        body:    JSON.stringify({ coordinates: [[fromLng, fromLat], [toLng, toLat]] }),
       },
     );
 
@@ -122,7 +133,7 @@ async function getStreetRoute(
     const coords = data.features?.[0]?.geometry?.coordinates;
     if (!coords) return null;
 
-    // ORS returns [lng, lat] pairs — convert to {latitude, longitude}
+    // ORS returns [lng, lat] — convert to {latitude, longitude}
     return coords.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
   } catch (err) {
     logger.error({ err }, "ORS routing failed");
@@ -134,41 +145,35 @@ async function getStreetRoute(
 
 const MOCK_DRUGS: Record<
   string,
-  {
-    manufacturer: string;
-    usage: string;
-    dosage: string;
-    activeIngredient: string;
-    sideEffects: string;
-  }
+  { manufacturer: string; usage: string; dosage: string; activeIngredient: string; sideEffects: string }
 > = {
   default: {
-    manufacturer: "GlaxoSmithKline",
-    usage: "مسكن للألم وخافض للحرارة",
-    dosage: "قرص إلى قرصين كل 4–6 ساعات، بحد أقصى 8 أقراص يومياً",
+    manufacturer:     "GlaxoSmithKline",
+    usage:            "مسكن للألم وخافض للحرارة",
+    dosage:           "قرص إلى قرصين كل 4–6 ساعات، بحد أقصى 8 أقراص يومياً",
     activeIngredient: "باراسيتامول 500 ملغ + كافيين 65 ملغ",
-    sideEffects: "نادراً: طفح جلدي، اضطرابات هضمية",
+    sideEffects:      "نادراً: طفح جلدي، اضطرابات هضمية",
   },
   augmentin: {
-    manufacturer: "GlaxoSmithKline",
-    usage: "مضاد حيوي لعلاج الالتهابات البكتيرية في الجهاز التنفسي والجلد",
-    dosage: "قرص كل 12 ساعة مع الطعام لمدة 7–10 أيام",
+    manufacturer:     "GlaxoSmithKline",
+    usage:            "مضاد حيوي لعلاج الالتهابات البكتيرية في الجهاز التنفسي والجلد",
+    dosage:           "قرص كل 12 ساعة مع الطعام لمدة 7–10 أيام",
     activeIngredient: "أموكسيسيلين 500 ملغ + حمض كلافولانيك 125 ملغ",
-    sideEffects: "نادراً: إسهال، غثيان، طفح جلدي",
+    sideEffects:      "نادراً: إسهال، غثيان، طفح جلدي",
   },
   nexium: {
-    manufacturer: "AstraZeneca",
-    usage: "لعلاج قرحة المعدة وارتجاع الحمض المعدي المريئي",
-    dosage: "كبسولة واحدة يومياً قبل الأكل بـ 30 دقيقة",
+    manufacturer:     "AstraZeneca",
+    usage:            "لعلاج قرحة المعدة وارتجاع الحمض المعدي المريئي",
+    dosage:           "كبسولة واحدة يومياً قبل الأكل بـ 30 دقيقة",
     activeIngredient: "إيزوميبرازول 40 ملغ",
-    sideEffects: "نادراً: صداع، إسهال، غثيان",
+    sideEffects:      "نادراً: صداع، إسهال، غثيان",
   },
   concor: {
-    manufacturer: "Merck KGaA",
-    usage: "لعلاج ارتفاع ضغط الدم وقصور القلب وذبحة الصدر",
-    dosage: "قرص واحد يومياً في الصباح مع الماء",
+    manufacturer:     "Merck KGaA",
+    usage:            "لعلاج ارتفاع ضغط الدم وقصور القلب وذبحة الصدر",
+    dosage:           "قرص واحد يومياً في الصباح مع الماء",
     activeIngredient: "بيزوبرولول فومارات 5 ملغ",
-    sideEffects: "نادراً: دوار، تعب، برودة الأطراف",
+    sideEffects:      "نادراً: دوار، تعب، برودة الأطراف",
   },
 };
 
@@ -180,77 +185,85 @@ router.post("/search", async (req: Request, res: Response) => {
     imageBase64?: string;
   };
 
-  if (!medicationName && !imageBase64) {
+  // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,")
+  const cleanBase64 = imageBase64
+    ? imageBase64.replace(/^data:[^;]+;base64,/, "")
+    : undefined;
+
+  req.log.info(
+    {
+      hasMedName:   !!medicationName,
+      medicationName: medicationName?.slice(0, 60),
+      hasImage:     !!cleanBase64,
+      imageByteLen: cleanBase64?.length ?? 0,
+    },
+    "POST /api/medication/search",
+  );
+
+  if (!medicationName && !cleanBase64) {
     return res.status(400).json({ message: "اسم الدواء أو صورته مطلوب" });
   }
 
-  // Try Gemini first
-  const geminiResult = await recognizeWithGemini(medicationName, imageBase64);
-  if (geminiResult) {
-    return res.json({ ...geminiResult, medicationName: geminiResult.name });
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (apiKey) {
+    // Key is configured — try Gemini; return error if it fails (no silent fallback)
+    const result = await recognizeWithGemini(medicationName, cleanBase64);
+    if (result) {
+      return res.json({ ...result, medicationName: result.name });
+    }
+    req.log.warn({ medicationName, hasImage: !!cleanBase64 }, "Gemini failed with key set — returning error");
+    return res.status(503).json({
+      error: "تعذّر التعرف على الدواء عبر Gemini AI. تأكد من صلاحية المفتاح أو حاول مجدداً.",
+      code:  "GEMINI_FAILED",
+    });
   }
 
-  // Fall back to mock data
-  const key = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
-  const found = Object.keys(MOCK_DRUGS).find(
-    (k) => k !== "default" && key.includes(k),
-  );
-  const info = found ? MOCK_DRUGS[found] : MOCK_DRUGS.default;
-  const name = medicationName ?? "Panadol Extra";
+  // No key configured — dev/demo mode: use mock data
+  req.log.info("GEMINI_API_KEY not set — using mock data");
+  const key   = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
+  const found = Object.keys(MOCK_DRUGS).find((k) => k !== "default" && key.includes(k));
+  const info  = found ? MOCK_DRUGS[found] : MOCK_DRUGS.default;
+  const name  = medicationName ?? "Panadol Extra";
 
   return res.json({
     name,
     medicationName: name,
-    manufacturer: info.manufacturer,
-    usage: info.usage,
-    dosage: info.dosage,
+    manufacturer:     info.manufacturer,
+    usage:            info.usage,
+    dosage:           info.dosage,
     activeIngredient: info.activeIngredient,
-    sideEffects: info.sideEffects,
-    confidence: imageBase64 ? 0.92 : 1.0,
+    sideEffects:      info.sideEffects,
+    confidence:       1.0,
+    _source:          "mock",
   });
 });
 
 router.post("/route", async (req: Request, res: Response) => {
   const { fromLat, fromLng, toLat, toLng } = req.body as {
-    fromLat?: number;
-    fromLng?: number;
-    toLat?: number;
-    toLng?: number;
+    fromLat?: number; fromLng?: number; toLat?: number; toLng?: number;
   };
 
   if (fromLat == null || fromLng == null || toLat == null || toLng == null) {
-    return res
-      .status(400)
-      .json({ message: "إحداثيات البداية والنهاية مطلوبة" });
+    return res.status(400).json({ message: "إحداثيات البداية والنهاية مطلوبة" });
   }
 
   const coordinates = await getStreetRoute(fromLat, fromLng, toLat, toLng);
   if (!coordinates) {
-    // Straight-line fallback so the UI always gets something
     return res.json({
       coordinates: [
         { latitude: fromLat, longitude: fromLng },
-        { latitude: toLat, longitude: toLng },
+        { latitude: toLat,   longitude: toLng   },
       ],
       source: "straight-line",
     });
   }
-
   return res.json({ coordinates, source: "openrouteservice" });
 });
 
 router.post("/request", requireAuth, async (req: Request, res: Response) => {
-  const body = req.body as {
-    medicationName?: string;
-    searchRadius?: number;
-    patientLat?: number;
-    patientLng?: number;
-  };
-
-  if (!body.medicationName) {
-    return res.status(400).json({ message: "اسم الدواء مطلوب" });
-  }
-
+  const body = req.body as { medicationName?: string };
+  if (!body.medicationName) return res.status(400).json({ message: "اسم الدواء مطلوب" });
   return res.status(201).json({
     id: `req-${Date.now()}`,
     status: "searching",
@@ -266,55 +279,21 @@ router.put("/confirm-receipt", requireAuth, async (req: Request, res: Response) 
 });
 
 router.put("/cancel", requireAuth, async (req: Request, res: Response) => {
-  const { requestId, reason } = req.body as {
-    requestId?: string;
-    reason?: string;
-  };
-  if (!requestId || !reason) {
-    return res
-      .status(400)
-      .json({ message: "requestId وسبب الإلغاء مطلوبان" });
-  }
+  const { requestId, reason } = req.body as { requestId?: string; reason?: string };
+  if (!requestId || !reason) return res.status(400).json({ message: "requestId وسبب الإلغاء مطلوبان" });
   return res.json({ message: "تم إلغاء الطلب", requestId });
 });
 
 router.get("/history", requireAuth, async (req: Request, res: Response) => {
   const now = Date.now();
-  const history = [
-    {
-      id: "r1",
-      medicationName: "Panadol Extra",
-      pharmacyName: "صيدلية الشفاء",
-      status: "completed",
-      price: 2500,
-      createdAt: new Date(now - 86400000 * 2).toISOString(),
-    },
-    {
-      id: "r2",
-      medicationName: "Augmentin 625",
-      pharmacyName: "صيدلية النور",
-      status: "completed",
-      price: 7500,
-      createdAt: new Date(now - 86400000 * 7).toISOString(),
-    },
-    {
-      id: "r3",
-      medicationName: "Nexium 40mg",
-      pharmacyName: "صيدلية الحياة",
-      status: "cancelled",
-      price: null,
-      createdAt: new Date(now - 86400000 * 14).toISOString(),
-    },
-    {
-      id: "r4",
-      medicationName: "Concor 5mg",
-      pharmacyName: "صيدلية الأمل",
-      status: "completed",
-      price: 4000,
-      createdAt: new Date(now - 86400000 * 21).toISOString(),
-    },
-  ];
-  return res.json({ history });
+  return res.json({
+    history: [
+      { id: "r1", medicationName: "Panadol Extra",  pharmacyName: "صيدلية الشفاء", status: "completed", price: 2500, createdAt: new Date(now - 86400000 * 2).toISOString() },
+      { id: "r2", medicationName: "Augmentin 625",  pharmacyName: "صيدلية النور",  status: "completed", price: 7500, createdAt: new Date(now - 86400000 * 7).toISOString() },
+      { id: "r3", medicationName: "Nexium 40mg",    pharmacyName: "صيدلية الحياة", status: "cancelled", price: null, createdAt: new Date(now - 86400000 * 14).toISOString() },
+      { id: "r4", medicationName: "Concor 5mg",     pharmacyName: "صيدلية الأمل",  status: "completed", price: 4000, createdAt: new Date(now - 86400000 * 21).toISOString() },
+    ],
+  });
 });
 
 router.post("/save", requireAuth, async (req: Request, res: Response) => {
@@ -328,75 +307,43 @@ router.post("/save", requireAuth, async (req: Request, res: Response) => {
     pharmacyId?: string;
   };
 
-  if (!body.medicationName) {
-    return res.status(400).json({ message: "اسم الدواء مطلوب" });
-  }
+  if (!body.medicationName) return res.status(400).json({ message: "اسم الدواء مطلوب" });
 
   const boxPills = body.pillsInBox ?? 0;
-  const perDay = (body.dailyDoses ?? 1) * (body.pillsPerDose ?? 1);
+  const perDay   = (body.dailyDoses ?? 1) * (body.pillsPerDose ?? 1);
   const daysLeft = perDay > 0 ? Math.floor(boxPills / perDay) : 0;
-  const start = body.startDate ? new Date(body.startDate) : new Date();
-  const endDate = new Date(start.getTime() + daysLeft * 86400000);
+  const start    = body.startDate ? new Date(body.startDate) : new Date();
+  const endDate  = new Date(start.getTime() + daysLeft * 86400000);
 
   return res.status(201).json({
     id: `med-${Date.now()}`,
     medicationName: body.medicationName,
-    dailyDoses: body.dailyDoses ?? 1,
+    dailyDoses:  body.dailyDoses ?? 1,
     pillsPerDose: body.pillsPerDose ?? 1,
-    pillsInBox: boxPills,
-    isChronic: body.isChronic ?? false,
-    startDate: start.toISOString(),
-    endDate: body.isChronic ? null : endDate.toISOString(),
-    daysSupply: daysLeft,
+    pillsInBox:  boxPills,
+    isChronic:   body.isChronic ?? false,
+    startDate:   start.toISOString(),
+    endDate:     body.isChronic ? null : endDate.toISOString(),
+    daysSupply:  daysLeft,
     message: "تم حفظ الدواء وسيتم تذكيرك قبل يوم من نفاده",
   });
 });
 
-router.get("/reminders", requireAuth, async (req: Request, res: Response) => {
+router.get("/reminders", requireAuth, async (_req: Request, res: Response) => {
   const tomorrow = new Date(Date.now() + 86400000);
   return res.json({
     reminders: [
-      {
-        id: "rem1",
-        medicationName: "Panadol Extra",
-        reminderDate: tomorrow.toISOString(),
-        isSent: false,
-        message: "سينتهي دواؤك غداً — هل تريد نفس الجرعة؟",
-      },
+      { id: "rem1", medicationName: "Panadol Extra", reminderDate: tomorrow.toISOString(), isSent: false, message: "سينتهي دواؤك غداً — هل تريد نفس الجرعة؟" },
     ],
   });
 });
 
-router.get("/my-medications", requireAuth, async (req: Request, res: Response) => {
+router.get("/my-medications", requireAuth, async (_req: Request, res: Response) => {
   const now = new Date();
   return res.json({
     medications: [
-      {
-        id: "m1",
-        medicationName: "Concor 5mg",
-        activeIngredient: "بيزوبرولول 5 ملغ",
-        dailyDoses: 1,
-        pillsPerDose: 1,
-        pillsInBox: 28,
-        isChronic: true,
-        startDate: new Date(now.getTime() - 86400000 * 10).toISOString(),
-        endDate: null,
-        lastPharmacyName: "صيدلية النور",
-        daysLeft: null,
-      },
-      {
-        id: "m2",
-        medicationName: "Augmentin 625",
-        activeIngredient: "أموكسيسيلين + حمض كلافولانيك",
-        dailyDoses: 2,
-        pillsPerDose: 1,
-        pillsInBox: 14,
-        isChronic: false,
-        startDate: new Date(now.getTime() - 86400000 * 5).toISOString(),
-        endDate: new Date(now.getTime() + 86400000 * 2).toISOString(),
-        lastPharmacyName: "صيدلية الشفاء",
-        daysLeft: 2,
-      },
+      { id: "m1", medicationName: "Concor 5mg",    activeIngredient: "بيزوبرولول 5 ملغ",                     dailyDoses: 1, pillsPerDose: 1, pillsInBox: 28, isChronic: true,  startDate: new Date(now.getTime() - 86400000 * 10).toISOString(), endDate: null,                                                   lastPharmacyName: "صيدلية النور",  daysLeft: null },
+      { id: "m2", medicationName: "Augmentin 625", activeIngredient: "أموكسيسيلين + حمض كلافولانيك",         dailyDoses: 2, pillsPerDose: 1, pillsInBox: 14, isChronic: false, startDate: new Date(now.getTime() - 86400000 * 5).toISOString(),  endDate: new Date(now.getTime() + 86400000 * 2).toISOString(),   lastPharmacyName: "صيدلية الشفاء", daysLeft: 2 },
     ],
   });
 });
