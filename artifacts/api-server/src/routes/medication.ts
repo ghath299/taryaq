@@ -177,41 +177,58 @@ async function getStreetRoute(
   }
 }
 
-// ─── Mock fallback data ───────────────────────────────────────────────────────
+  // ─── Mock fallback data ───────────────────────────────────────────────────────
 
-const MOCK_DRUGS: Record
-  string,
-  { manufacturer: string; usage: string; dosage: string; activeIngredient: string; sideEffects: string }
-> = {
-  default: {
-    manufacturer:     "GlaxoSmithKline",
-    usage:            "مسكن للألم وخافض للحرارة",
-    dosage:           "قرص إلى قرصين كل 4–6 ساعات، بحد أقصى 8 أقراص يومياً",
-    activeIngredient: "باراسيتامول 500 ملغ + كافيين 65 ملغ",
-    sideEffects:      "نادراً: طفح جلدي، اضطرابات هضمية",
-  },
-  augmentin: {
-    manufacturer:     "GlaxoSmithKline",
-    usage:            "مضاد حيوي لعلاج الالتهابات البكتيرية في الجهاز التنفسي والجلد",
-    dosage:           "قرص كل 12 ساعة مع الطعام لمدة 7–10 أيام",
-    activeIngredient: "أموكسيسيلين 500 ملغ + حمض كلافولانيك 125 ملغ",
-    sideEffects:      "نادراً: إسهال، غثيان، طفح جلدي",
-  },
-  nexium: {
-    manufacturer:     "AstraZeneca",
-    usage:            "لعلاج قرحة المعدة وارتجاع الحمض المعدي المريئي",
-    dosage:           "كبسولة واحدة يومياً قبل الأكل بـ 30 دقيقة",
-    activeIngredient: "إيزوميبرازول 40 ملغ",
-    sideEffects:      "نادراً: صداع، إسهال، غثيان",
-  },
-  concor: {
-    manufacturer:     "Merck KGaA",
-    usage:            "لعلاج ارتفاع ضغط الدم وقصور القلب وذبحة الصدر",
-    dosage:           "قرص واحد يومياً في الصباح مع الماء",
-    activeIngredient: "بيزوبرولول فومارات 5 ملغ",
-    sideEffects:      "نادراً: دوار، تعب، برودة الأطراف",
-  },
-};
+  const MOCK_DRUGS: Record<
+    string,
+    {
+      manufacturer: string;
+      usage: string;
+      dosage: string;
+      activeIngredient: string;
+      sideEffects: string;
+    }
+  > = {
+    default: {
+      manufacturer: "GlaxoSmithKline",
+      usage: "مسكن للألم وخافض للحرارة",
+      dosage: "قرص إلى قرصين كل 4-6 ساعات، بحد أقصى 8 أقراص يومياً",
+      activeIngredient: "باراسيتامول 500 ملغ + كافيين 65 ملغ",
+      sideEffects: "نادراً: طفح جلدي، اضطرابات هضمية",
+    },
+
+    augmentin: {
+      manufacturer: "GSK",
+      usage: "مضاد حيوي لعلاج الالتهابات البكتيرية",
+      dosage: "قرص كل 12 ساعة بعد الطعام",
+      activeIngredient: "Amoxicillin + Clavulanic Acid",
+      sideEffects: "إسهال، غثيان، طفح جلدي",
+    },
+
+    panadol: {
+      manufacturer: "Haleon",
+      usage: "مسكن للألم وخافض للحرارة",
+      dosage: "قرص كل 4-6 ساعات عند الحاجة",
+      activeIngredient: "Paracetamol",
+      sideEffects: "نادراً مشاكل كبد عند الجرعات العالية",
+    },
+
+    brufen: {
+      manufacturer: "Abbott",
+      usage: "مسكن ومضاد التهاب",
+      dosage: "400mg بعد الطعام",
+      activeIngredient: "Ibuprofen",
+      sideEffects: "حرقة معدة، غثيان",
+    },
+
+    flagyl: {
+      manufacturer: "Sanofi",
+      usage: "مضاد للبكتيريا والطفيليات",
+      dosage: "حسب وصف الطبيب",
+      activeIngredient: "Metronidazole",
+      sideEffects: "غثيان، طعم معدني بالفم",
+    },
+  };
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
