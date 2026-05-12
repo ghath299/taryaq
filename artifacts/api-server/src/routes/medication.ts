@@ -179,7 +179,7 @@ async function getStreetRoute(
 
 // ─── Mock fallback data ───────────────────────────────────────────────────────
 
-const MOCK_DRUGS: Record<
+const MOCK_DRUGS: Record
   string,
   { manufacturer: string; usage: string; dosage: string; activeIngredient: string; sideEffects: string }
 > = {
