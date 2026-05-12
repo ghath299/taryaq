@@ -177,18 +177,18 @@ async function getStreetRoute(
   }
 }
 
-  // ─── Mock fallback data ───────────────────────────────────────────────────────
+// ─── Mock fallback data ───────────────────────────────────────────────────────
 
-  const MOCK_DRUGS: Record<
-    string,
-    {
-      manufacturer: string;
-      usage: string;
-      dosage: string;
-      activeIngredient: string;
-      sideEffects: string;
-    }
-  > = {
+const MOCK_DRUGS: Record<
+  string,
+  {
+    manufacturer: string;
+    usage: string;
+    dosage: string;
+    activeIngredient: string;
+    sideEffects: string;
+  }
+> = {
     default: {
       manufacturer: "GlaxoSmithKline",
       usage: "مسكن للألم وخافض للحرارة",
