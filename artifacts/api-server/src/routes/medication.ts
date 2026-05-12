@@ -17,12 +17,18 @@ interface ClaudeResult {
   confidence: number;
 }
 
-// hardFail = true  → key is invalid/unauthorised  → show error to user
-// hardFail = false → rate-limit / network / parse  → fall back to mock silently
 interface ClaudeOutcome {
   data:        ClaudeResult | null;
   hardFail:    boolean;
   failReason?: string;
+}
+
+function detectMediaType(base64: string): "image/jpeg" | "image/webp" | "image/png" | "image/gif" {
+  if (base64.startsWith("/9j/")) return "image/jpeg";
+  if (base64.startsWith("UklGR")) return "image/webp";
+  if (base64.startsWith("iVBOR")) return "image/png";
+  if (base64.startsWith("R0lGO")) return "image/gif";
+  return "image/jpeg";
 }
 
 async function recognizeWithClaude(
@@ -51,7 +57,7 @@ async function recognizeWithClaude(
           content: [
             {
               type:   "image",
-              source: { type: "base64", media_type: "image/jpeg", data: imageBase64 },
+              source: { type: "base64", media_type: detectMediaType(imageBase64), data: imageBase64 },
             },
             {
               type: "text",
@@ -86,13 +92,13 @@ async function recognizeWithClaude(
       });
     }
 
-    // ── Debug: log full Claude response before processing ──
     console.log("CLAUDE_FULL_RESPONSE:", JSON.stringify(response, null, 2));
 
     const text = response.content[0]?.type === "text" ? response.content[0].text : "";
     logger.info({ rawText: text.slice(0, 300) }, "Claude raw response");
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       logger.warn({ text: text.slice(0, 200) }, "Claude response contained no JSON");
       return { data: null, hardFail: false, failReason: "no JSON in Claude response" };
@@ -124,11 +130,9 @@ async function recognizeWithClaude(
     const apiErr = err as { status?: number; message?: string };
     logger.error({ status: apiErr.status, message: apiErr.message }, "Claude recognition error");
 
-    // 401 = invalid key → hard fail (user must fix the key)
     if (apiErr.status === 401) {
       return { data: null, hardFail: true, failReason: "مفتاح Claude غير صالح. يرجى تحديث المفتاح." };
     }
-    // 429 / 529 = rate limit / overload → soft fail → use mock
     return { data: null, hardFail: false, failReason: `Claude error ${apiErr.status ?? "unknown"}: ${apiErr.message ?? ""}` };
   }
 }
@@ -166,7 +170,6 @@ async function getStreetRoute(
     const coords = data.features?.[0]?.geometry?.coordinates;
     if (!coords) return null;
 
-    // ORS returns [lng, lat] — convert to {latitude, longitude}
     return coords.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
   } catch (err) {
     logger.error({ err }, "ORS routing failed");
@@ -218,7 +221,6 @@ router.post("/search", async (req: Request, res: Response) => {
     imageBase64?: string;
   };
 
-  // Strip data URL prefix if present (e.g. "data:image/jpeg;base64,")
   const cleanBase64 = imageBase64
     ? imageBase64.replace(/^data:[^;]+;base64,/, "")
     : undefined;
@@ -244,7 +246,6 @@ router.post("/search", async (req: Request, res: Response) => {
   }
 
   if (hardFail) {
-    // Invalid / revoked key — user must fix this, don't mask with mock data
     req.log.warn({ failReason }, "Claude hard fail — returning error to client");
     return res.status(503).json({
       error:  failReason ?? "مفتاح Claude غير صالح. يرجى تحديث المفتاح.",
@@ -252,12 +253,12 @@ router.post("/search", async (req: Request, res: Response) => {
     });
   }
 
-  // Soft fail (rate limit, network, no key) — fall back to mock data transparently
   if (failReason) {
     req.log.warn({ failReason }, "Claude soft fail — falling back to mock data");
   } else {
     req.log.info("ANTHROPIC_API_KEY not set — using mock data");
   }
+
   const key   = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
   const found = Object.keys(MOCK_DRUGS).find((k) => k !== "default" && key.includes(k));
   const info  = found ? MOCK_DRUGS[found] : MOCK_DRUGS.default;
@@ -379,8 +380,8 @@ router.get("/my-medications", requireAuth, async (_req: Request, res: Response) 
   const now = new Date();
   return res.json({
     medications: [
-      { id: "m1", medicationName: "Concor 5mg",    activeIngredient: "بيزوبرولول 5 ملغ",                     dailyDoses: 1, pillsPerDose: 1, pillsInBox: 28, isChronic: true,  startDate: new Date(now.getTime() - 86400000 * 10).toISOString(), endDate: null,                                                   lastPharmacyName: "صيدلية النور",  daysLeft: null },
-      { id: "m2", medicationName: "Augmentin 625", activeIngredient: "أموكسيسيلين + حمض كلافولانيك",         dailyDoses: 2, pillsPerDose: 1, pillsInBox: 14, isChronic: false, startDate: new Date(now.getTime() - 86400000 * 5).toISOString(),  endDate: new Date(now.getTime() + 86400000 * 2).toISOString(),   lastPharmacyName: "صيدلية الشفاء", daysLeft: 2 },
+      { id: "m1", medicationName: "Concor 5mg",    activeIngredient: "بيزوبرولول 5 ملغ",             dailyDoses: 1, pillsPerDose: 1, pillsInBox: 28, isChronic: true,  startDate: new Date(now.getTime() - 86400000 * 10).toISOString(), endDate: null,                                                 lastPharmacyName: "صيدلية النور",  daysLeft: null },
+      { id: "m2", medicationName: "Augmentin 625", activeIngredient: "أموكسيسيلين + حمض كلافولانيك", dailyDoses: 2, pillsPerDose: 1, pillsInBox: 14, isChronic: false, startDate: new Date(now.getTime() - 86400000 * 5).toISOString(),  endDate: new Date(now.getTime() + 86400000 * 2).toISOString(), lastPharmacyName: "صيدلية الشفاء", daysLeft: 2 },
     ],
   });
 });
