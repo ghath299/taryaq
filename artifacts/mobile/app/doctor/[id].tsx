@@ -145,7 +145,7 @@ export default function DoctorDetailScreen() {
         <Animated.View entering={FadeInUp.delay(200).duration(400)} style={[styles.infoCard, { backgroundColor: isDark ? theme.card : "#FFF" }]}>
           <View style={styles.cardHeader}>
             <Feather name="map-pin" size={18} color={theme.primary} />
-            <ThemedText type="h4" style={{ color: theme.text, fontWeight: "700", marginRight: Spacing.sm }}>العنوان والتواصل</ThemedText>
+            <ThemedText type="h4" style={{ color: theme.text, fontWeight: "700", marginRight: Spacing.sm }}>العنوان </ThemedText>
           </View>
           <View style={styles.infoRow}>
             <ThemedText type="body" style={{ color: theme.text, textAlign: "right", flex: 1 }}>{doctor.clinicAddress}</ThemedText>

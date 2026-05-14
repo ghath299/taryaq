@@ -89,7 +89,7 @@ interface QuickService {
 
 const quickServices: QuickService[] = [
   { id: "prescription", labelAr: "تصوير وصفة", iconLib: "feather", icon: "camera", color: ICON_CYAN, route: "/search" },
-  { id: "pharmacy", labelAr: "أستكشف الأطباء ولصيدليات", iconLib: "feather", icon: "map-pin", color: BRAND_BLUE, route: "/osm-map" },
+  { id: "pharmacy", labelAr: "أستكشف ", iconLib: "feather", icon: "map-pin", color: BRAND_BLUE, route: "/osm-map" },
   { id: "medicine", labelAr: "البحث عن دواء", iconLib: "mci", icon: "pill", color: BRAND_PURPLE, route: "/search" },
   { id: "doctor", labelAr: "حجز طبيب", iconLib: "mci", icon: "stethoscope", color: ICON_CYAN, route: "/(tabs)/doctors" },
 ];

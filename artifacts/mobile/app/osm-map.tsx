@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Platform, ActivityIndicator, useColorScheme } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+  useColorScheme,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack } from "expo-router";
 import * as Location from "expo-location";
@@ -44,15 +50,23 @@ export default function OSMMapScreen() {
         if (mounted) setErrorMsg("تعذّر تحديد موقعك الحالي");
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? "#0F172A" : SOFT_BG }]} edges={["top"]}>
+    <SafeAreaView
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? "#0F172A" : SOFT_BG },
+      ]}
+      edges={["top"]}
+    >
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: "الصيدليات القريبة",
+          headerTitle: "الصيدليات وألاطباء في محافظتك",
           headerTitleAlign: "center",
           headerBackTitle: "رجوع",
         }}
@@ -66,22 +80,38 @@ export default function OSMMapScreen() {
         )}
 
         <View pointerEvents="box-none" style={styles.overlayTop}>
-          <View style={[styles.headerCard, { backgroundColor: isDark ? "#1E293B" : CARD_BG }]}>
+          <View
+            style={[
+              styles.headerCard,
+              { backgroundColor: isDark ? "#1E293B" : CARD_BG },
+            ]}
+          >
             <View style={styles.headerIconWrap}>
               <Feather name="map-pin" size={20} color={BRAND_BLUE} />
             </View>
             <View style={{ flex: 1 }}>
-              <ThemedText type="h4" style={[styles.headerTitle, { textAlign: "right" }]}>
-                البحث عن الصيدليات القريبة
+              <ThemedText
+                type="h4"
+                style={[styles.headerTitle, { textAlign: "right" }]}
+              >
+                البحث عن الصيدليات والأطباء في محافظتك
               </ThemedText>
-              <ThemedText type="caption" style={[styles.headerSubtitle, { textAlign: "right" }]}>
+              <ThemedText
+                type="caption"
+                style={[styles.headerSubtitle, { textAlign: "right" }]}
+              >
                 Google Maps داخل تطبيق ترياق
               </ThemedText>
             </View>
           </View>
 
           {!coords && !errorMsg ? (
-            <View style={[styles.statusCard, { backgroundColor: isDark ? "#1E293B" : CARD_BG }]}>
+            <View
+              style={[
+                styles.statusCard,
+                { backgroundColor: isDark ? "#1E293B" : CARD_BG },
+              ]}
+            >
               <ActivityIndicator size="small" color={BRAND_BLUE} />
               <ThemedText type="caption" style={styles.statusText}>
                 جاري تحديد موقعك الحالي…
@@ -90,7 +120,12 @@ export default function OSMMapScreen() {
           ) : null}
 
           {errorMsg ? (
-            <View style={[styles.statusCard, { backgroundColor: isDark ? "#1E293B" : CARD_BG }]}>
+            <View
+              style={[
+                styles.statusCard,
+                { backgroundColor: isDark ? "#1E293B" : CARD_BG },
+              ]}
+            >
               <Feather name="alert-circle" size={16} color="#DC2626" />
               <ThemedText type="caption" style={styles.statusText}>
                 {errorMsg}
@@ -100,7 +135,12 @@ export default function OSMMapScreen() {
         </View>
 
         {coords ? (
-          <View style={[styles.legendCard, { backgroundColor: isDark ? "#1E293B" : CARD_BG }]}>
+          <View
+            style={[
+              styles.legendCard,
+              { backgroundColor: isDark ? "#1E293B" : CARD_BG },
+            ]}
+          >
             <View style={[styles.legendDot, { backgroundColor: BRAND_BLUE }]} />
             <ThemedText type="caption" style={styles.legendText}>
               نطاق البحث: {SEARCH_RADIUS_M} متر حول موقعك
@@ -141,7 +181,11 @@ function NativeMap({
 
   return (
     <MapView
-      ref={(r: unknown) => { mapRef.current = r; }}
+      // إعادة تحميل الخريطة عند تغيير الثيم
+      key={isDark ? "dark" : "light"}
+      ref={(r: unknown) => {
+        mapRef.current = r;
+      }}
       style={StyleSheet.absoluteFill}
       provider={PROVIDER_GOOGLE}
       region={region}
@@ -149,11 +193,19 @@ function NativeMap({
       showsMyLocationButton={false}
       rotateEnabled={false}
       pitchEnabled={false}
+      // إصلاح التحريك بإصبع واحد
+      scrollEnabled={true}
+      zoomEnabled={true}
+      zoomTapEnabled={true}
       customMapStyle={isDark ? DARK_MAP_STYLE : LIGHT_MAP_STYLE}
     >
       {coords ? (
         <>
-          <Marker coordinate={coords} title="موقعك الحالي" pinColor={BRAND_BLUE} />
+          <Marker
+            coordinate={coords}
+            title="موقعك الحالي"
+            pinColor={BRAND_BLUE}
+          />
           <Circle
             center={coords}
             radius={SEARCH_RADIUS_M}
@@ -167,10 +219,21 @@ function NativeMap({
   );
 }
 
-function WebMap({ coords, isDark }: { coords: Coords | null; isDark: boolean }) {
+function WebMap({
+  coords,
+  isDark,
+}: {
+  coords: Coords | null;
+  isDark: boolean;
+}) {
   const center = coords ?? { latitude: DEFAULT_LAT, longitude: DEFAULT_LNG };
-  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_MAPS_API_KEY ?? "";
-  const mapStyle = isDark ? JSON.stringify(DARK_MAP_STYLE) : JSON.stringify(LIGHT_MAP_STYLE);
+  const apiKey =
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ??
+    process.env.GOOGLE_MAPS_API_KEY ??
+    "";
+  const mapStyle = isDark
+    ? JSON.stringify(DARK_MAP_STYLE)
+    : JSON.stringify(LIGHT_MAP_STYLE);
 
   const html = `<!DOCTYPE html>
 <html>
@@ -191,6 +254,7 @@ function WebMap({ coords, isDark }: { coords: Coords | null; isDark: boolean }) 
       zoom: 15,
       disableDefaultUI: true,
       zoomControl: true,
+      gestureHandling: "greedy",
       styles: ${mapStyle}
     });
 
@@ -237,28 +301,91 @@ function WebMap({ coords, isDark }: { coords: Coords | null; isDark: boolean }) 
   );
 }
 
+// ستايل النهاري — طرق ومباني ظاهرة
 const LIGHT_MAP_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.medical", stylers: [{ visibility: "on" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "labels", stylers: [{ visibility: "on" }] },
-  { featureType: "water", elementType: "labels", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ visibility: "on" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels",
+    stylers: [{ visibility: "on" }],
+  },
+  {
+    featureType: "building",
+    elementType: "geometry",
+    stylers: [{ visibility: "on" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
 ];
 
+// ستايل الليلي — طرق ومباني ظاهرة بألوان داكنة
 const DARK_MAP_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#1f2937" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#9ca3af" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#1f2937" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#374151" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#1f2937" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#d1d5db" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#4b5563" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#111827" }] },
-  { featureType: "water", elementType: "labels", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#374151", visibility: "on" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1f2937" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels",
+    stylers: [{ visibility: "on" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#4b5563" }],
+  },
+  {
+    featureType: "building",
+    elementType: "geometry",
+    stylers: [{ color: "#374151", visibility: "on" }],
+  },
+  {
+    featureType: "building",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#2d3748" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#111827" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "poi.medical", stylers: [{ visibility: "on" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "building", elementType: "geometry", stylers: [{ color: "#374151" }] },
+  {
+    featureType: "landscape",
+    elementType: "geometry",
+    stylers: [{ color: "#111827" }],
+  },
 ];
 
 const styles = StyleSheet.create({
