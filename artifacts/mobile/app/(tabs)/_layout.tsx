@@ -77,6 +77,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Feather name="package" size={22} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="medicine-search"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }

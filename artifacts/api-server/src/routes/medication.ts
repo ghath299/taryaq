@@ -18,9 +18,30 @@ interface ClaudeResult {
 }
 
 interface ClaudeOutcome {
-  data:        ClaudeResult | null;
-  hardFail:    boolean;
+  data: ClaudeResult | null;
+  hardFail: boolean;
   failReason?: string;
+  failType?: "not_medicine" | "unclear" | "ai_unavailable" | "invalid_response";
+  objectType?: string;
+  objectName?: string;
+}
+
+interface ImageAiResult {
+  isMedicine?: boolean;
+  objectType?: string;
+  objectName?: string;
+  friendlyMessage?: string;
+  confidence?: number;
+  reason?: string;
+  medicine?: {
+    name?: string;
+    company?: string;
+    manufacturer?: string;
+    activeIngredient?: string;
+    usage?: string;
+    dosage?: string;
+    sideEffects?: string;
+  };
 }
 
 function detectMediaType(base64: string): "image/jpeg" | "image/webp" | "image/png" | "image/gif" {
@@ -31,12 +52,50 @@ function detectMediaType(base64: string): "image/jpeg" | "image/webp" | "image/p
   return "image/jpeg";
 }
 
+function extractJsonObject(text: string): string | null {
+  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) return null;
+  return cleaned.slice(firstBrace, lastBrace + 1);
+}
+
+function buildFriendlyNonMedicineMessage(result: ImageAiResult): string {
+  const type = (result.objectType || "شيء آخر").toLowerCase();
+  const name = result.objectName?.trim();
+
+  const arabicType = (() => {
+    if (type.includes("phone") || type.includes("mobile") || type.includes("iphone")) return "تلفون";
+    if (type.includes("car")) return "سيارة";
+    if (type.includes("person") || type.includes("human")) return "شخص";
+    if (type.includes("animal") || type.includes("cat") || type.includes("dog")) return "حيوان";
+    if (type.includes("food") || type.includes("drink")) return "أكل أو مشروب";
+    if (type.includes("laptop") || type.includes("computer")) return "حاسبة";
+    return "شيء مو دواء";
+  })();
+
+  const objectLabel = name ? `${arabicType} (${name})` : arabicType;
+  return `😄 حبيبي هاي الصورة تبين ${objectLabel}، مو علاج. صوّر علبة الدواء أو اكتب اسمه حتى أبحث لك مضبوط.`;
+}
+
+function isUsableMedicineResult(medicine?: ImageAiResult["medicine"]): boolean {
+  if (!medicine?.name || medicine.name.trim().length < 2) return false;
+
+  const joined = [medicine.name, medicine.company, medicine.activeIngredient, medicine.usage, medicine.dosage]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const fakeDefaults = ["panadol extra", "unknown", "اسم الدواء", "غير معروف"];
+  return !fakeDefaults.some((term) => joined === term || joined.includes(`\"${term}\"`));
+}
+
 async function recognizeWithClaude(
   medicationName?: string,
   imageBase64?: string,
 ): Promise<ClaudeOutcome> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { data: null, hardFail: false };
+  if (!apiKey) return { data: null, hardFail: false, failType: "ai_unavailable", failReason: "ANTHROPIC_API_KEY not set" };
 
   try {
     logger.info(
@@ -45,84 +104,168 @@ async function recognizeWithClaude(
     );
 
     const client = new Anthropic({ apiKey });
-
     let response: Anthropic.Message;
 
     if (imageBase64) {
       response = await client.messages.create({
-        model:      "claude-opus-4-5",
-        max_tokens: 1024,
+        model: "claude-opus-4-5",
+        max_tokens: 1200,
+        temperature: 0,
         messages: [{
-          role:    "user",
+          role: "user",
           content: [
             {
-              type:   "image",
+              type: "image",
               source: { type: "base64", media_type: detectMediaType(imageBase64), data: imageBase64 },
             },
             {
               type: "text",
-              text: `تعرف على الدواء في هذه الصورة وأعطني معلوماته بالعربي بصيغة JSON فقط بدون أي نص إضافي:
+              text: `أنت نظام ذكي داخل تطبيق صحي اسمه ترياق.
+
+حلل الصورة بدقة وحدد هل تحتوي على دواء حقيقي واضح أم لا.
+
+أرجع JSON فقط بدون Markdown وبدون شرح.
+
+إذا كانت الصورة تحتوي على دواء واضح:
 {
-  "name": "اسم الدواء",
-  "company": "الشركة المصنعة",
-  "activeIngredient": "المادة الفعالة",
-  "usage": "الاستخدام",
-  "dosage": "الجرعة الموصى بها"
-}`,
+  "isMedicine": true,
+  "objectType": "medicine",
+  "objectName": "اسم الدواء الظاهر على العلبة أو الشريط",
+  "friendlyMessage": "",
+  "confidence": 0.0,
+  "medicine": {
+    "name": "اسم الدواء",
+    "company": "الشركة المصنعة إن ظهرت أو غير معروف",
+    "activeIngredient": "المادة الفعالة إن أمكن",
+    "usage": "الاستخدام العام باختصار",
+    "dosage": "اكتب: حسب وصف الطبيب إذا لم تكن الجرعة واضحة",
+    "sideEffects": "أعراض جانبية شائعة باختصار"
+  }
+}
+
+إذا كانت الصورة ليست دواء، مثل هاتف أو سيارة أو شخص أو طعام أو أي شيء آخر:
+{
+  "isMedicine": false,
+  "objectType": "phone/car/person/animal/food/device/other",
+  "objectName": "اسم الشيء إن أمكن مثل iPhone 8 Plus",
+  "friendlyMessage": "رسالة عراقية لطيفة ومضحكة قليلاً، بدون إهانة، تخبر المستخدم أن الصورة ليست دواء وتطلب منه تصوير الدواء",
+  "confidence": 0.0,
+  "reason": "سبب القرار باختصار"
+}
+
+قواعد صارمة:
+- لا تخترع اسم دواء إذا الصورة ليست دواء.
+- لا تستخدم Panadol أو أي دواء افتراضي.
+- إذا الصورة غير واضحة أو لا يظهر اسم الدواء، اجعل isMedicine=false واكتب رسالة تطلب صورة أوضح.
+- confidence بين 0 و 1.
+- إذا لم تكن متأكدًا أن الصورة دواء، اعتبرها ليست دواء.
+- JSON فقط.`, 
             },
           ],
         }],
       });
     } else {
       response = await client.messages.create({
-        model:      "claude-opus-4-5",
+        model: "claude-opus-4-5",
         max_tokens: 1024,
+        temperature: 0,
         messages: [{
-          role:    "user",
+          role: "user",
           content: `تعرف على هذا الدواء وأعطني معلوماته بالعربي بصيغة JSON فقط بدون أي نص إضافي:
 {
   "name": "اسم الدواء",
   "company": "الشركة المصنعة",
   "activeIngredient": "المادة الفعالة",
   "usage": "الاستخدام",
-  "dosage": "الجرعة الموصى بها"
+  "dosage": "الجرعة الموصى بها",
+  "sideEffects": "الأعراض الجانبية الشائعة"
 }
 اسم الدواء: ${medicationName}`,
         }],
       });
     }
 
-    console.log("CLAUDE_FULL_RESPONSE:", JSON.stringify(response, null, 2));
-
     const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-    logger.info({ rawText: text.slice(0, 300) }, "Claude raw response");
+    logger.info({ rawText: text.slice(0, 600) }, "Claude raw response");
 
-    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.warn({ text: text.slice(0, 200) }, "Claude response contained no JSON");
-      return { data: null, hardFail: false, failReason: "no JSON in Claude response" };
+    const jsonText = extractJsonObject(text);
+    if (!jsonText) {
+      logger.warn({ text: text.slice(0, 300), hasImage: !!imageBase64 }, "Claude response contained no JSON");
+      return {
+        data: null,
+        hardFail: false,
+        failType: imageBase64 ? "unclear" : "invalid_response",
+        failReason: imageBase64
+          ? "🤔 ما قدرت أفهم الصورة بشكل واضح. صوّر علبة الدواء من قريب وخلي الاسم واضح."
+          : "no JSON in Claude response",
+      };
     }
 
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      name?:             string;
-      company?:          string;
+    const parsed = JSON.parse(jsonText) as ImageAiResult & {
+      name?: string;
+      company?: string;
       activeIngredient?: string;
-      usage?:            string;
-      dosage?:           string;
+      usage?: string;
+      dosage?: string;
+      sideEffects?: string;
     };
 
-    logger.info({ name: parsed.name }, "Claude recognition success");
+    if (imageBase64) {
+      const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0;
 
+      if (!parsed.isMedicine) {
+        const message = parsed.friendlyMessage?.trim() || buildFriendlyNonMedicineMessage(parsed);
+        logger.info(
+          { objectType: parsed.objectType, objectName: parsed.objectName, confidence, reason: parsed.reason },
+          "image rejected as non-medicine",
+        );
+        return {
+          data: null,
+          hardFail: false,
+          failType: confidence < 0.45 ? "unclear" : "not_medicine",
+          failReason: message,
+          objectType: parsed.objectType,
+          objectName: parsed.objectName,
+        };
+      }
+
+      if (confidence < 0.55 || !isUsableMedicineResult(parsed.medicine)) {
+        logger.warn({ confidence, medicine: parsed.medicine }, "medicine image result is not reliable");
+        return {
+          data: null,
+          hardFail: false,
+          failType: "unclear",
+          failReason: "🤔 الصورة قريبة من دواء، بس الاسم مو واضح كفاية. صوّر الواجهة من قريب وخلي الكتابة ظاهرة.",
+        };
+      }
+
+      const med = parsed.medicine!;
+      logger.info({ name: med.name, confidence }, "Claude image medicine recognition success");
+
+      return {
+        data: {
+          name: med.name!.trim(),
+          manufacturer: (med.company || med.manufacturer || "غير معروف").trim(),
+          activeIngredient: med.activeIngredient?.trim() ?? "",
+          usage: med.usage?.trim() ?? "",
+          dosage: med.dosage?.trim() ?? "حسب وصف الطبيب",
+          sideEffects: med.sideEffects?.trim() ?? "",
+          confidence,
+        },
+        hardFail: false,
+      };
+    }
+
+    logger.info({ name: parsed.name }, "Claude text recognition success");
     return {
       data: {
-        name:             parsed.name            ?? medicationName ?? "Unknown",
-        manufacturer:     parsed.company         ?? "Unknown",
+        name: parsed.name ?? medicationName ?? "Unknown",
+        manufacturer: parsed.company ?? "Unknown",
         activeIngredient: parsed.activeIngredient ?? "",
-        usage:            parsed.usage            ?? "",
-        dosage:           parsed.dosage           ?? "",
-        sideEffects:      "",
-        confidence:       imageBase64 ? 0.92 : 0.97,
+        usage: parsed.usage ?? "",
+        dosage: parsed.dosage ?? "",
+        sideEffects: parsed.sideEffects ?? "",
+        confidence: 0.97,
       },
       hardFail: false,
     };
@@ -133,7 +276,14 @@ async function recognizeWithClaude(
     if (apiErr.status === 401) {
       return { data: null, hardFail: true, failReason: "مفتاح Claude غير صالح. يرجى تحديث المفتاح." };
     }
-    return { data: null, hardFail: false, failReason: `Claude error ${apiErr.status ?? "unknown"}: ${apiErr.message ?? ""}` };
+    return {
+      data: null,
+      hardFail: false,
+      failType: imageBase64 ? "unclear" : "invalid_response",
+      failReason: imageBase64
+        ? "صار خلل مؤقت بالتعرف على الصورة. جرّب مرة ثانية أو ابحث باسم الدواء."
+        : `Claude error ${apiErr.status ?? "unknown"}: ${apiErr.message ?? ""}`,
+    };
   }
 }
 
@@ -256,7 +406,7 @@ router.post("/search", async (req: Request, res: Response) => {
     return res.status(400).json({ message: "اسم الدواء أو صورته مطلوب" });
   }
 
-  const { data: claudeData, hardFail, failReason } = await recognizeWithClaude(medicationName, cleanBase64);
+  const { data: claudeData, hardFail, failReason, failType, objectType, objectName } = await recognizeWithClaude(medicationName, cleanBase64);
 
   if (claudeData) {
     return res.json({ ...claudeData, medicationName: claudeData.name });
@@ -270,16 +420,38 @@ router.post("/search", async (req: Request, res: Response) => {
     });
   }
 
+  if (cleanBase64) {
+    req.log.warn(
+      { failReason, failType, objectType, objectName },
+      "Claude image recognition failed — returning friendly no-result response",
+    );
+
+    return res.json({
+      success: false,
+      type: failType ?? "not_medicine_or_unclear",
+      objectType: objectType ?? null,
+      objectName: objectName ?? null,
+      funnyMessage:
+        failReason ??
+        "🤔 ما قدرت أتعرف على دواء واضح بالصورة. صوّر علبة العلاج من قريب أو اكتب اسمه.",
+      actions: [
+        { key: "retake", label: "إعادة التصوير" },
+        { key: "search_by_name", label: "البحث بالاسم" },
+        { key: "ask_pharmacist", label: "إرسال للصيدلي للمساعدة" },
+      ],
+    });
+  }
+
   if (failReason) {
-    req.log.warn({ failReason }, "Claude soft fail — falling back to mock data");
+    req.log.warn({ failReason }, "Claude text soft fail — falling back to mock data for text only");
   } else {
-    req.log.info("ANTHROPIC_API_KEY not set — using mock data");
+    req.log.info("ANTHROPIC_API_KEY not set — using mock data for text only");
   }
 
   const key   = (medicationName ?? "").toLowerCase().replace(/[\s-]/g, "");
   const found = Object.keys(MOCK_DRUGS).find((k) => k !== "default" && key.includes(k));
   const info  = found ? MOCK_DRUGS[found] : MOCK_DRUGS.default;
-  const name  = medicationName ?? "Panadol Extra";
+  const name  = medicationName ?? "دواء غير محدد";
 
   return res.json({
     name,
@@ -290,7 +462,7 @@ router.post("/search", async (req: Request, res: Response) => {
     activeIngredient: info.activeIngredient,
     sideEffects:      info.sideEffects,
     confidence:       1.0,
-    _source:          "mock",
+    _source:          "mock-text-only",
   });
 });
 

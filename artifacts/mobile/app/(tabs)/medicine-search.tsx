@@ -82,6 +82,12 @@ export default function MedicineSearchScreen() {
 
   const [rating, setRating] = useState(0);
 
+  // ── Not-drug error state (success: false from API) ───────────────────────────
+  const [notDrugError, setNotDrugError] = useState<{
+    message: string;
+    actions: { key: string; label: string }[];
+  } | null>(null);
+
   // Dose info — pillsInBox replaces the old "total pills" manual field
   const [dailyDoses, setDailyDoses]   = useState(2);
   const [pillsPerDose, setPillsPerDose] = useState(1);
@@ -95,23 +101,42 @@ export default function MedicineSearchScreen() {
   const cardBg      = isDark ? theme.card : "#FFFFFF";
   const subtleBorder = isDark ? "#21262D" : "#E5EEF5";
 
-  // ── Get real GPS location on mount ──────────────────────────────────────────
+  // ── Watch real GPS location live ────────────────────────────────────────────
   useEffect(() => {
-    (async () => {
+    let subscription: Location.LocationSubscription | null = null;
+
+    const startWatchingLocation = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setUserLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        });
-      } catch {
-        // permission denied or unavailable — map falls back to Baghdad
+
+        if (status !== "granted") {
+          console.log("Location permission denied");
+          return;
+        }
+
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 1000,
+            distanceInterval: 3,
+          },
+          (loc) => {
+            setUserLocation({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+          },
+        );
+      } catch (error) {
+        console.log("Location watch error:", error);
       }
-    })();
+    };
+
+    startWatchingLocation();
+
+    return () => {
+      subscription?.remove();
+    };
   }, []);
 
   // ── Computed: auto days-supply from box size ─────────────────────────────────
@@ -128,6 +153,7 @@ export default function MedicineSearchScreen() {
     async (name: string, imageUri?: string, imageBase64?: string) => {
       if (!name.trim() && !imageBase64) return;
       setIsRecognizing(true);
+      setNotDrugError(null);
       try {
         const body: Record<string, string> = {};
         if (name.trim()) body.medicationName = name.trim();
@@ -143,6 +169,7 @@ export default function MedicineSearchScreen() {
         });
 
         let data: {
+          success?: boolean;
           name?: string;
           medicationName?: string;
           manufacturer?: string;
@@ -151,7 +178,9 @@ export default function MedicineSearchScreen() {
           activeIngredient?: string;
           error?: string;
           message?: string;
+          funnyMessage?: string;
           code?: string;
+          actions?: { key: string; label: string }[];
         };
 
         try {
@@ -161,8 +190,20 @@ export default function MedicineSearchScreen() {
         }
 
         if (!resp.ok) {
-          // Surface the server's specific error message
           throw new Error(data.error ?? data.message ?? `خطأ في الخادم (${resp.status})`);
+        }
+
+        // ── Server signals the image is not a drug ──────────────────────────
+        if (data.success === false) {
+          setNotDrugError({
+            message: data.funnyMessage ?? data.message ?? "الصورة لا تحتوي على دواء واضح",
+            actions: data.actions ?? [
+              { key: "retake",         label: "إعادة التصوير" },
+              { key: "search_by_name", label: "البحث بالاسم" },
+              { key: "gallery",        label: "فتح المعرض" },
+            ],
+          });
+          return;
         }
 
         setDrugInfo({
@@ -316,6 +357,8 @@ export default function MedicineSearchScreen() {
           onSearch={() => recognizeDrug(query)}
           onCamera={pickFromCamera}
           onGallery={pickFromGallery}
+          notDrugError={notDrugError}
+          onDismissError={() => setNotDrugError(null)}
           theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
@@ -460,17 +503,64 @@ interface BaseProps {
 
 // ── Step: input ────────────────────────────────────────────────────────────────
 
-function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, notDrugError, onDismissError, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   query: string;
   onQueryChange: (v: string) => void;
   isRecognizing: boolean;
   onSearch: () => void;
   onCamera: () => void;
   onGallery: () => void;
+  notDrugError: { message: string; actions: { key: string; label: string }[] } | null;
+  onDismissError: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 24 }}>
       <Animated.View entering={FadeInUp.duration(400)}>
+
+        {/* ── Not-drug error card ───────────────────────────────────────── */}
+        {notDrugError && (
+          <Animated.View
+            entering={FadeInDown.duration(350)}
+            style={[styles.notDrugCard, { backgroundColor: cardBg, borderColor: addAlpha(theme.error ?? "#E53E3E", 0.35) }]}
+          >
+            <View style={[styles.notDrugIconWrap, { backgroundColor: addAlpha(theme.error ?? "#E53E3E", 0.1) }]}>
+              <MaterialCommunityIcons name="image-off-outline" size={36} color={theme.error ?? "#E53E3E"} />
+            </View>
+            <ThemedText type="body" style={{ color: theme.text, fontWeight: "800", textAlign: "center", marginTop: Spacing.md }}>
+              لم يُتعرَّف على دواء
+            </ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginTop: Spacing.xs, lineHeight: 22 }}>
+              {notDrugError.message}
+            </ThemedText>
+
+            <View style={styles.notDrugActions}>
+              <Pressable onPress={onCamera} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: theme.primaryDark, opacity: pressed ? 0.85 : 1 }]}>
+                <Feather name="camera" size={15} color="#fff" />
+                <ThemedText type="small" style={{ color: "#fff", fontWeight: "700", marginRight: 4 }}>إعادة التصوير</ThemedText>
+              </Pressable>
+              <Pressable onPress={onGallery} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.12), opacity: pressed ? 0.85 : 1 }]}>
+                <Feather name="image" size={15} color={theme.primaryDark} />
+                <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>فتح المعرض</ThemedText>
+              </Pressable>
+            </View>
+            <View style={[styles.notDrugActions, { marginTop: Spacing.xs }]}>
+              <Pressable
+                onPress={() => { onDismissError(); }}
+                style={({ pressed }) => [styles.notDrugBtn, { flex: 1, backgroundColor: addAlpha(theme.primaryDark, 0.07), opacity: pressed ? 0.85 : 1 }]}
+              >
+                <Feather name="edit-2" size={15} color={theme.primaryDark} />
+                <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>البحث بالاسم</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={onDismissError}
+                style={({ pressed }) => [styles.notDrugBtnOutline, { borderColor: subtleBorder, opacity: pressed ? 0.85 : 1 }]}
+              >
+                <ThemedText type="small" style={{ color: theme.textSecondary, fontWeight: "700" }}>إلغاء</ThemedText>
+              </Pressable>
+            </View>
+          </Animated.View>
+        )}
+
         <View style={[styles.searchCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
           <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "right", marginBottom: Spacing.sm }}>
             اكتب اسم الدواء
@@ -970,6 +1060,12 @@ const styles = StyleSheet.create({
   imagePickGrad:{ paddingVertical: Spacing.xl, alignItems: "center", justifyContent: "center" },
 
   recognizingCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: Spacing.lg, padding: Spacing.md, borderRadius: BorderRadius.lg },
+
+  notDrugCard:     { borderRadius: BorderRadius.lg, borderWidth: 1.5, padding: Spacing.lg, alignItems: "center", marginBottom: Spacing.lg },
+  notDrugIconWrap: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  notDrugActions:  { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md, width: "100%" },
+  notDrugBtn:      { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, gap: 4 },
+  notDrugBtnOutline: { paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.lg, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 
   drugCard:       { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
   drugCardHeader: { flexDirection: "row", alignItems: "center", padding: Spacing.md },
