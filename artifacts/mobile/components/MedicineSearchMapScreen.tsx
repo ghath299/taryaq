@@ -6,7 +6,6 @@ import React, {
   useState,
 } from "react";
 import { View, StyleSheet, Platform } from "react-native";
-import { WebView } from "react-native-webview";
 import * as Haptics from "expo-haptics";
 import Animated, {
   useSharedValue,
@@ -265,163 +264,12 @@ const MOCK_PHARMACIES: MapPharmacy[] = [
   },
 ];
 
-function buildLeafletHtml(
-  lat: number,
-  lng: number,
-  radius: number,
-  pharmacies: Array<{
-    id: string;
-    name: string;
-    lat: number;
-    lng: number;
-    status: PharmacyStatus;
-  }>,
-): string {
-  const phJson = JSON.stringify(pharmacies);
-  const geoJson = JSON.stringify(KARBALA_GEOJSON);
-  const ringCoords = JSON.stringify(KARBALA_RING);
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body,#map{height:100%;width:100%;background:#edf6fb}
-.leaflet-container{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
-.user-dot{width:18px;height:18px;background:#1F40C8;border:4px solid #fff;border-radius:50%;box-shadow:0 2px 10px rgba(31,64,200,.55)}
-.user-ring{width:42px;height:42px;border-radius:50%;background:rgba(31,64,200,.16);display:flex;align-items:center;justify-content:center}
-.pharmacy-marker{width:34px;height:34px;border-radius:14px;display:flex;align-items:center;justify-content:center;border:3px solid rgba(255,255,255,.96);box-shadow:0 4px 14px rgba(0,0,0,.28);color:#fff;font-weight:900;font-size:19px}
-.pharmacy-marker.gray{filter:grayscale(.8);opacity:.72}
-.leaflet-control-zoom{border:none!important;box-shadow:0 4px 14px rgba(0,0,0,.16)!important}
-.leaflet-control-zoom a{border-radius:12px!important;background:rgba(255,255,255,.97)!important;color:#222!important;font-weight:900!important;width:34px!important;height:34px!important;line-height:34px!important;margin-bottom:4px!important;border:none!important}
-.leaflet-tooltip{background:rgba(255,255,255,.97);border:none;border-radius:10px;font-size:12px;font-weight:800;color:#1F40C8;box-shadow:0 2px 8px rgba(0,0,0,.18);padding:5px 9px}
-</style>
-</head>
-<body>
-<div id="map"></div>
-<script>
-var KARBALA_GEOJSON=${geoJson};
-var RING=${ringCoords};
-var PHARMACIES=${phJson};
-var COLORS={waiting:'#1F40C8',available:'#22C55E',unavailable:'#9CA3AF',timeout:'#CBD5E1'};
-var userMarker=null;
-var radiusCircle=null;
-var routeLine=null;
-var markers={};
-
-function pip(lat,lng){
-  var inside=false;
-  for(var i=0,j=RING.length-1;i<RING.length;j=i++){
-    var xi=RING[i][0],yi=RING[i][1];
-    var xj=RING[j][0],yj=RING[j][1];
-    if((yi>lat)!==(yj>lat)&&lng<(xj-xi)*(lat-yi)/(yj-yi)+xi)inside=!inside;
-  }
-  return inside;
-}
-
-var map=L.map('map',{
-  minZoom:10,
-  maxZoom:18,
-  zoomControl:false,
-  attributionControl:false,
-  dragging:true,
-  touchZoom:true,
-  doubleClickZoom:true,
-  scrollWheelZoom:true,
-  boxZoom:true,
-  keyboard:true,
-  tap:true
-});
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:19,
-  minZoom:8
-}).addTo(map);
-
-L.control.zoom({position:'bottomright'}).addTo(map);
-
-var boundaryLayer=L.geoJSON(KARBALA_GEOJSON,{
-  style:{
-    color:'#1F40C8',
-    weight:2.2,
-    fillOpacity:0.035,
-    fillColor:'#5EDFFF',
-    dashArray:'8 5'
-  }
-}).addTo(map);
-
-var kbBounds=boundaryLayer.getBounds();
-map.setMaxBounds(kbBounds.pad(0.05));
-map.setView([${lat},${lng}],14);
-
-function makeUserIcon(){
-  return L.divIcon({
-    className:'',
-    html:'<div class="user-ring"><div class="user-dot"></div></div>',
-    iconSize:[42,42],
-    iconAnchor:[21,21]
-  });
-}
-
-function makePharmacyIcon(status){
-  var color=COLORS[status]||COLORS.waiting;
-  var cls=status==='unavailable'||status==='timeout'?' gray':'';
-  return L.divIcon({
-    className:'',
-    html:'<div class="pharmacy-marker'+cls+'" style="background:'+color+'">+</div>',
-    iconSize:[34,34],
-    iconAnchor:[17,17]
-  });
-}
-
-userMarker=L.marker([${lat},${lng}],{
-  icon:makeUserIcon(),
-  zIndexOffset:1000
-}).addTo(map);
-
-radiusCircle=L.circle([${lat},${lng}],{
-  radius:${radius},
-  color:'#1F40C8',
-  fillColor:'#5EDFFF',
-  fillOpacity:.09,
-  weight:2.4,
-  dashArray:'7 5'
-}).addTo(map);
-
-PHARMACIES.forEach(function(p){
-  if(!pip(p.lat,p.lng))return;
-  markers[p.id]=L.marker([p.lat,p.lng],{icon:makePharmacyIcon(p.status)})
-    .addTo(map)
-    .bindTooltip(p.name,{permanent:false,direction:'top',offset:[0,-22]});
-});
-
-window.updateUser=function(lat,lng,radius){
-  if(userMarker)userMarker.setLatLng([lat,lng]);
-  if(radiusCircle){
-    radiusCircle.setLatLng([lat,lng]);
-    radiusCircle.setRadius(radius);
-  }
+const PHARMACY_STATUS_COLORS: Record<PharmacyStatus, string> = {
+  waiting: "#1F40C8",
+  available: "#22C55E",
+  unavailable: "#9CA3AF",
+  timeout: "#CBD5E1",
 };
-
-window.updateStatus=function(id,status){
-  if(markers[id])markers[id].setIcon(makePharmacyIcon(status));
-};
-
-window.drawRoute=function(coords){
-  if(!coords||coords.length<2)return;
-  if(routeLine){map.removeLayer(routeLine);}
-  var pts=coords.map(function(c){return[c.latitude,c.longitude];});
-  routeLine=L.polyline(pts,{color:'#1F40C8',weight:5,opacity:.9,lineCap:'round',lineJoin:'round'}).addTo(map);
-  try{map.fitBounds(routeLine.getBounds(),{padding:[34,34],maxZoom:16});}catch(e){}
-};
-</script>
-</body>
-</html>`;
-}
 
 interface Props {
   drugName: string;
@@ -448,7 +296,7 @@ export default function MedicineSearchMapScreen({
   const [foundId, setFoundId] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  const webViewRef = useRef<WebView>(null);
+  const mapRef = useRef<unknown>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const radarScale = useSharedValue(0.4);
@@ -495,56 +343,6 @@ export default function MedicineSearchMapScreen({
     });
   }, [pharmacies, pharmacyCoords, searchRadius]);
 
-  const mapHtml = useMemo(() => {
-    const phData = visiblePharmacies.map((p) => {
-      const c = pharmacyCoords[p.id]!;
-      return {
-        id: p.id,
-        name: p.name,
-        lat: c.latitude,
-        lng: c.longitude,
-        status: p.status,
-      };
-    });
-
-    return buildLeafletHtml(
-      centre.latitude,
-      centre.longitude,
-      searchRadius,
-      phData,
-    );
-  }, [
-    centre.latitude,
-    centre.longitude,
-    pharmacyCoords,
-    searchRadius,
-    visiblePharmacies,
-  ]);
-
-  const mapKey = `map-${Math.round(centre.latitude * 100)}-${Math.round(
-    centre.longitude * 100,
-  )}`;
-
-  useEffect(() => {
-    if (!mapReady) return;
-    webViewRef.current?.injectJavaScript(
-      `window.updateUser(${centre.latitude}, ${centre.longitude}, ${searchRadius}); true;`,
-    );
-  }, [centre.latitude, centre.longitude, searchRadius, mapReady]);
-
-  useEffect(() => {
-    if (!routeCoords || !mapReady) return;
-    webViewRef.current?.injectJavaScript(
-      `window.drawRoute(${JSON.stringify(routeCoords)}); true;`,
-    );
-  }, [routeCoords, mapReady]);
-
-  const injectStatus = useCallback((id: string, status: string) => {
-    webViewRef.current?.injectJavaScript(
-      `window.updateStatus('${id}','${status}'); true;`,
-    );
-  }, []);
-
   const stopRadar = useCallback(() => {
     cancelAnimation(radarScale);
     cancelAnimation(radarOpacity);
@@ -570,7 +368,6 @@ export default function MedicineSearchMapScreen({
         ),
       );
 
-      injectStatus(id, "available");
       stopRadar();
 
       foundPulse.value = withRepeat(
@@ -593,7 +390,6 @@ export default function MedicineSearchMapScreen({
     [
       visiblePharmacies,
       pharmacyCoords,
-      injectStatus,
       stopRadar,
       onPharmacyFound,
       foundPulse,
@@ -641,7 +437,6 @@ export default function MedicineSearchMapScreen({
       setPharmacies((prev) =>
         prev.map((p) => (p.id === id ? { ...p, status } : p)),
       );
-      injectStatus(id, status);
     };
 
     candidates.forEach((p, index) => {
@@ -661,7 +456,7 @@ export default function MedicineSearchMapScreen({
       timersRef.current = [];
       stopRadar();
     };
-  }, [isSearching, visiblePharmacies, injectStatus, handleFound, stopRadar]);
+  }, [isSearching, visiblePharmacies, handleFound, stopRadar]);
 
   const radarStyle = useAnimatedStyle(() => ({
     transform: [{ scale: radarScale.value }],
@@ -706,27 +501,119 @@ export default function MedicineSearchMapScreen({
           ? "لم يرد"
           : "داخل النطاق";
 
+  // Suppress unused warning — kept for potential future use
+  void checkedCount;
+  void mapReady;
+
   return (
     <View>
       <View style={[styles.mapWrap, { borderColor: subtleBorder }]}>
         {Platform.OS !== "web" ? (
           <>
-            <WebView
-              ref={webViewRef}
-              key={mapKey}
-              source={{ html: mapHtml }}
-              style={StyleSheet.absoluteFillObject}
-              onLoad={() => setMapReady(true)}
-              originWhitelist={["*"]}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              allowsInlineMediaPlayback={true}
-              mixedContentMode="always"
-              nestedScrollEnabled={true}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              androidLayerType="hardware"
-            />
+            {(() => {
+              const Maps = require("react-native-maps");
+              const MapView = Maps.default;
+              const { Marker, Circle, Polyline, Polygon, PROVIDER_GOOGLE } =
+                Maps;
+
+              const karbalaCoords = (
+                KARBALA_RING as readonly (readonly [number, number])[]
+              ).map(([lng, lat]) => ({
+                latitude: lat,
+                longitude: lng,
+              }));
+
+              return (
+                <MapView
+                  ref={(r: unknown) => {
+                    mapRef.current = r;
+                  }}
+                  style={StyleSheet.absoluteFillObject}
+                  provider={PROVIDER_GOOGLE}
+                  region={{
+                    latitude: centre.latitude,
+                    longitude: centre.longitude,
+                    latitudeDelta: 0.04,
+                    longitudeDelta: 0.04,
+                  }}
+                  showsUserLocation={false}
+                  showsMyLocationButton={false}
+                  rotateEnabled={false}
+                  pitchEnabled={false}
+                  onMapReady={() => setMapReady(true)}
+                >
+                  <Polygon
+                    coordinates={karbalaCoords}
+                    strokeColor="#1F40C8"
+                    strokeWidth={2}
+                    fillColor="rgba(94,223,255,0.04)"
+                  />
+
+                  <Circle
+                    center={centre}
+                    radius={searchRadius}
+                    strokeColor="#1F40C8"
+                    strokeWidth={2.4}
+                    fillColor="rgba(94,223,255,0.09)"
+                  />
+
+                  <Marker
+                    coordinate={centre}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                    title="موقعك الحالي"
+                  >
+                    <View style={styles.userRing}>
+                      <View style={styles.userDot} />
+                    </View>
+                  </Marker>
+
+                  {visiblePharmacies.map((p) => {
+                    const coord = pharmacyCoords[p.id];
+                    if (!coord) return null;
+                    const color =
+                      PHARMACY_STATUS_COLORS[p.status] ??
+                      PHARMACY_STATUS_COLORS.waiting;
+                    const isGray =
+                      p.status === "unavailable" || p.status === "timeout";
+                    return (
+                      <Marker
+                        key={p.id}
+                        coordinate={{
+                          latitude: coord.latitude,
+                          longitude: coord.longitude,
+                        }}
+                        anchor={{ x: 0.5, y: 0.5 }}
+                        title={p.name}
+                      >
+                        <View
+                          style={[
+                            styles.pharmacyPin,
+                            {
+                              backgroundColor: color,
+                              opacity: isGray ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="hospital-box"
+                            size={13}
+                            color="#fff"
+                          />
+                        </View>
+                      </Marker>
+                    );
+                  })}
+
+                  {routeCoords && routeCoords.length >= 2 && (
+                    <Polyline
+                      coordinates={routeCoords}
+                      strokeColor="#1F40C8"
+                      strokeWidth={5}
+                    />
+                  )}
+                </MapView>
+              );
+            })()}
 
             <View
               pointerEvents="none"
@@ -1011,6 +898,37 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderRadius: 6,
+  },
+
+  // Native Google Maps marker styles
+  userRing: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(31,64,200,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  userDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#1F40C8",
+    borderWidth: 3,
+    borderColor: "#fff",
+  },
+  pharmacyPin: {
+    width: 34,
+    height: 34,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.96)",
+    shadowColor: "#000",
+    shadowOpacity: 0.28,
+    shadowRadius: 7,
+    elevation: 4,
   },
 
   webPinWrap: {

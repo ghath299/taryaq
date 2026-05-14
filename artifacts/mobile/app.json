@@ -15,6 +15,9 @@
     },
     "ios": {
       "supportsTablet": false,
+      "config": {
+        "googleMapsApiKey": ""
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
@@ -25,6 +28,11 @@
       }
     },
     "android": {
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
