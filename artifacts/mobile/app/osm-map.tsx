@@ -87,7 +87,7 @@ export default function OSMMapScreen() {
                 type="caption"
                 style={[styles.headerSubtitle, { textAlign: "right" }]}
               >
-                OpenStreetMap داخل تطبيق ترياق
+                Google Maps داخل تطبيق ترياق
               </ThemedText>
             </View>
           </View>
@@ -135,7 +135,7 @@ function NativeMap({
 }) {
   const Maps = require("react-native-maps");
   const MapView = Maps.default;
-  const { UrlTile, Marker, Circle, MAP_TYPES, PROVIDER_DEFAULT } = Maps;
+  const { Marker, Circle, PROVIDER_GOOGLE } = Maps;
 
   const region = coords
     ? {
@@ -152,20 +152,13 @@ function NativeMap({
         mapRef.current = r;
       }}
       style={StyleSheet.absoluteFill}
-      provider={PROVIDER_DEFAULT}
-      mapType={MAP_TYPES.NONE}
+      provider={PROVIDER_GOOGLE}
       region={region}
       showsCompass={false}
       showsMyLocationButton={false}
       rotateEnabled={false}
       pitchEnabled={false}
     >
-      <UrlTile
-        urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maximumZ={19}
-        flipY={false}
-        tileSize={256}
-      />
       {coords ? (
         <>
           <Marker coordinate={coords} title="موقعك الحالي" pinColor={BRAND_BLUE} />
@@ -184,15 +177,8 @@ function NativeMap({
 
 function WebMap({ coords }: { coords: Coords | null }) {
   const center = coords ?? { latitude: 33.3152, longitude: 44.3661 };
-  const delta = 0.02;
-  const bbox = [
-    center.longitude - delta,
-    center.latitude - delta,
-    center.longitude + delta,
-    center.latitude + delta,
-  ].join(",");
-  const marker = `${center.latitude},${center.longitude}`;
-  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
+  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_MAPS_API_KEY ?? "";
+  const src = `https://www.google.com/maps/embed/v1/view?key=${apiKey}&center=${center.latitude},${center.longitude}&zoom=15&maptype=roadmap`;
 
   if (Platform.OS !== "web") return null;
   return (
@@ -200,7 +186,8 @@ function WebMap({ coords }: { coords: Coords | null }) {
       {React.createElement("iframe", {
         src,
         style: { border: 0, width: "100%", height: "100%" },
-        title: "OpenStreetMap",
+        title: "Google Maps",
+        allowFullScreen: true,
       })}
     </View>
   );

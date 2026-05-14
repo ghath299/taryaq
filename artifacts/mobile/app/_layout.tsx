@@ -1,4 +1,4 @@
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   const SUPPRESS = (s: string) =>
     s.includes("timeout exceeded") ||
     s.includes("fontfaceobserver") ||
@@ -205,8 +205,6 @@ export default function RootLayout() {
 
   const onLayoutRoot = useCallback(() => {}, []);
 
-  if (!appReady) return <View style={{ flex: 1 }} onLayout={onLayoutRoot} />;
-
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
@@ -216,7 +214,11 @@ export default function RootLayout() {
               <ThemeProvider>
                 <AppProvider>
                   <AuthProvider>
-                    <RootLayoutNav />
+                    {!appReady ? (
+                      <View style={{ flex: 1 }} onLayout={onLayoutRoot} />
+                    ) : (
+                      <RootLayoutNav />
+                    )}
                   </AuthProvider>
                 </AppProvider>
               </ThemeProvider>

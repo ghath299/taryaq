@@ -1,9 +1,12 @@
 import { useEffect, useRef } from "react";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { updateUserFcmToken } from "@/lib/firebase-data";
 import { logger } from "@/lib/logger";
+
+const isExpoGo = Constants.executionEnvironment === "storeClient";
 
 const NOTIFS_KEY = "@taryaq_notifications";
 
@@ -65,7 +68,7 @@ const INITIAL_NOTIFICATIONS: TaryaqNotification[] = [
   },
 ];
 
-if (Platform.OS !== "web") {
+if (Platform.OS !== "web" && !isExpoGo) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -137,7 +140,7 @@ export function useNotificationSetup() {
   const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
 
   useEffect(() => {
-    if (Platform.OS === "web") return;
+    if (Platform.OS === "web" || isExpoGo) return;
     notifListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
       const newNotif: TaryaqNotification = {
         id: Date.now().toString(),
