@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2, ensure_ascii=False\\)\\)\")",
+      "Bash(pnpm exec *)",
+      "Bash(grep -E \"\\(tsx|ts|jsx|js\\)$\")",
+      "Bash(git reset *)"
+    ]
+  }
+}
