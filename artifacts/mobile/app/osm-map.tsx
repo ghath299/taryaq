@@ -395,7 +395,7 @@
                              }) {
                                let Mapbox: any = null;
                                try {
-                                 Mapbox = require("@rnmapbox/maps");
+                                 const _mod = "@rnmapbox/maps"; Mapbox = require(_mod);
                                  Mapbox.default.setAccessToken(MAPBOX_TOKEN);
                                } catch {
                                  return (

@@ -17,7 +17,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
-import Animated, { FadeIn, FadeInDown, FadeInUp, ZoomIn } from "react-native-reanimated";
+import Animated, {
+  FadeIn, FadeInDown, FadeInUp, ZoomIn,
+  useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing,
+} from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
@@ -60,6 +63,20 @@ const STEP_TITLES: Record<Step, string> = {
   doses:    "معلومات الجرعة",
   done:     "تم الحفظ",
 };
+
+interface NearbyPharmacy {
+  id: string;
+  name: string;
+  address: string;
+  hours?: string;
+  distanceM: number;
+  rating: number;
+  isAvailable: boolean;
+  latitude: number;
+  longitude: number;
+  x?: number;
+  y?: number;
+}
 
 export default function MedicineSearchScreen() {
   const { theme, isDark } = useTheme();
@@ -343,9 +360,16 @@ export default function MedicineSearchScreen() {
         <Pressable onPress={goBack} style={styles.headerBtn} accessibilityRole="button">
           <Feather name="arrow-right" size={22} color={theme.text} />
         </Pressable>
-        <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800" }}>
-          {STEP_TITLES[step]}
-        </ThemedText>
+        <View style={{ alignItems: "center" }}>
+          <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800" }}>
+            {STEP_TITLES[step]}
+          </ThemedText>
+          {step === "input" && (
+            <ThemedText type="caption" style={{ color: theme.textSecondary, marginTop: 1 }}>
+              ابحث عن دوائك في أقرب الصيدليات
+            </ThemedText>
+          )}
+        </View>
         <View style={{ width: 36 }} />
       </View>
 
@@ -359,6 +383,7 @@ export default function MedicineSearchScreen() {
           onGallery={pickFromGallery}
           notDrugError={notDrugError}
           onDismissError={() => setNotDrugError(null)}
+          userLocation={userLocation}
           theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
         />
       )}
@@ -503,7 +528,7 @@ interface BaseProps {
 
 // ── Step: input ────────────────────────────────────────────────────────────────
 
-function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, notDrugError, onDismissError, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, notDrugError, onDismissError, userLocation, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
   query: string;
   onQueryChange: (v: string) => void;
   isRecognizing: boolean;
@@ -512,112 +537,328 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
   onGallery: () => void;
   notDrugError: { message: string; actions: { key: string; label: string }[] } | null;
   onDismissError: () => void;
+  userLocation: { latitude: number; longitude: number } | null;
 }) {
+  const [showScanSheet, setShowScanSheet] = useState(false);
+  const [pharmacies, setPharmacies] = useState<NearbyPharmacy[]>([]);
+  const [isLoadingPharmacies, setIsLoadingPharmacies] = useState(true);
+
+  const scanPulse = useSharedValue(1);
+  const scanStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scanPulse.value }],
+    opacity: 0.65 + (scanPulse.value - 1) * 2,
+  }));
+
+  useEffect(() => {
+    scanPulse.value = withRepeat(
+      withTiming(1.22, { duration: 950, easing: Easing.inOut(Easing.ease) }),
+      -1, true,
+    );
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    setIsLoadingPharmacies(true);
+    const lat = userLocation?.latitude ?? 32.6163;
+    const lng = userLocation?.longitude ?? 44.0246;
+    fetch(`${getApiUrl()}/api/pharmacy/nearby?lat=${lat}&lng=${lng}&radius=2000`)
+      .then(r => r.json())
+      .then((data: { pharmacies?: NearbyPharmacy[] }) => {
+        if (mounted && data.pharmacies) setPharmacies(data.pharmacies);
+      })
+      .catch(() => {})
+      .finally(() => { if (mounted) setIsLoadingPharmacies(false); });
+    return () => { mounted = false; };
+  }, [userLocation]);
+
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 24 }}>
-      <Animated.View entering={FadeInUp.duration(400)}>
+    <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
 
-        {/* ── Not-drug error card ───────────────────────────────────────── */}
-        {notDrugError && (
-          <Animated.View
-            entering={FadeInDown.duration(350)}
-            style={[styles.notDrugCard, { backgroundColor: cardBg, borderColor: addAlpha(theme.error ?? "#E53E3E", 0.35) }]}
-          >
-            <View style={[styles.notDrugIconWrap, { backgroundColor: addAlpha(theme.error ?? "#E53E3E", 0.1) }]}>
-              <MaterialCommunityIcons name="image-off-outline" size={36} color={theme.error ?? "#E53E3E"} />
-            </View>
-            <ThemedText type="body" style={{ color: theme.text, fontWeight: "800", textAlign: "center", marginTop: Spacing.md }}>
-              لم يُتعرَّف على دواء
-            </ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginTop: Spacing.xs, lineHeight: 22 }}>
-              {notDrugError.message}
-            </ThemedText>
-
-            <View style={styles.notDrugActions}>
-              <Pressable onPress={onCamera} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: theme.primaryDark, opacity: pressed ? 0.85 : 1 }]}>
-                <Feather name="camera" size={15} color="#fff" />
-                <ThemedText type="small" style={{ color: "#fff", fontWeight: "700", marginRight: 4 }}>إعادة التصوير</ThemedText>
-              </Pressable>
-              <Pressable onPress={onGallery} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.12), opacity: pressed ? 0.85 : 1 }]}>
-                <Feather name="image" size={15} color={theme.primaryDark} />
-                <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>فتح المعرض</ThemedText>
-              </Pressable>
-            </View>
-            <View style={[styles.notDrugActions, { marginTop: Spacing.xs }]}>
-              <Pressable
-                onPress={() => { onDismissError(); }}
-                style={({ pressed }) => [styles.notDrugBtn, { flex: 1, backgroundColor: addAlpha(theme.primaryDark, 0.07), opacity: pressed ? 0.85 : 1 }]}
-              >
-                <Feather name="edit-2" size={15} color={theme.primaryDark} />
-                <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>البحث بالاسم</ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={onDismissError}
-                style={({ pressed }) => [styles.notDrugBtnOutline, { borderColor: subtleBorder, opacity: pressed ? 0.85 : 1 }]}
-              >
-                <ThemedText type="small" style={{ color: theme.textSecondary, fontWeight: "700" }}>إلغاء</ThemedText>
-              </Pressable>
-            </View>
-          </Animated.View>
-        )}
-
-        <View style={[styles.searchCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
-          <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "right", marginBottom: Spacing.sm }}>
-            اكتب اسم الدواء
-          </ThemedText>
-          <View style={[styles.inputRow, { borderColor: subtleBorder, backgroundColor: isDark ? "#0D1117" : "#F7FAFC" }]}>
-            <Pressable onPress={onSearch} style={[styles.inputSearchBtn, { backgroundColor: theme.primaryDark }]}>
-              <Feather name="search" size={18} color="#fff" />
-            </Pressable>
-            <TextInput
-              value={query}
-              onChangeText={onQueryChange}
-              placeholder="Panadol، باراسيتامول، ..."
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.textInput, { color: theme.text }]}
-              textAlign="right"
-              returnKeyType="search"
-              onSubmitEditing={onSearch}
-              editable={!isRecognizing}
-            />
+      {/* ── Not-drug error card ──────────────────────────────────────────── */}
+      {notDrugError && (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.notDrugCard, { backgroundColor: cardBg, borderColor: addAlpha(theme.error ?? "#E53E3E", 0.35), marginHorizontal: Spacing.lg, marginTop: Spacing.md }]}
+        >
+          <View style={[styles.notDrugIconWrap, { backgroundColor: addAlpha(theme.error ?? "#E53E3E", 0.1) }]}>
+            <MaterialCommunityIcons name="image-off-outline" size={36} color={theme.error ?? "#E53E3E"} />
           </View>
-        </View>
+          <ThemedText type="body" style={{ color: theme.text, fontWeight: "800", textAlign: "center", marginTop: Spacing.md }}>
+            لم يُتعرَّف على دواء
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginTop: Spacing.xs, lineHeight: 22 }}>
+            {notDrugError.message}
+          </ThemedText>
+          <View style={styles.notDrugActions}>
+            <Pressable onPress={() => { onDismissError(); setShowScanSheet(true); }} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: theme.primaryDark, opacity: pressed ? 0.85 : 1 }]}>
+              <Feather name="camera" size={15} color="#fff" />
+              <ThemedText type="small" style={{ color: "#fff", fontWeight: "700", marginRight: 4 }}>إعادة التصوير</ThemedText>
+            </Pressable>
+            <Pressable onPress={onDismissError} style={({ pressed }) => [styles.notDrugBtnOutline, { borderColor: subtleBorder, opacity: pressed ? 0.85 : 1 }]}>
+              <ThemedText type="small" style={{ color: theme.textSecondary, fontWeight: "700" }}>إلغاء</ThemedText>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
 
-        <View style={styles.orRow}>
-          <View style={[styles.orLine, { backgroundColor: subtleBorder }]} />
-          <ThemedText type="caption" style={{ color: theme.textSecondary, marginHorizontal: Spacing.sm }}>أو</ThemedText>
-          <View style={[styles.orLine, { backgroundColor: subtleBorder }]} />
-        </View>
-
-        <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginBottom: Spacing.md }}>
-          صوّر علبة الدواء وسيتعرّف عليها الذكاء الاصطناعي تلقائياً
-        </ThemedText>
-
-        <View style={styles.imagePickRow}>
-          <Pressable onPress={onCamera} style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}>
-            <LinearGradient colors={[addAlpha(theme.primaryDark, 0.12), addAlpha(theme.primaryDark, 0.05)]} style={styles.imagePickGrad}>
-              <Feather name="camera" size={28} color={theme.primaryDark} />
-              <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginTop: 6 }}>الكاميرا</ThemedText>
-            </LinearGradient>
+      {/* ── Search bar ───────────────────────────────────────────────────── */}
+      <Animated.View entering={FadeInUp.duration(450)} style={{ paddingHorizontal: Spacing.lg, marginTop: Spacing.md }}>
+        <View style={[styles2.searchBar, {
+          backgroundColor: isDark ? "#161B22" : "#FFFFFF",
+          shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 7,
+        }]}>
+          <Pressable onPress={onSearch} style={[styles2.searchBtn, { backgroundColor: theme.primaryDark }]}>
+            <Feather name="search" size={26} color="#fff" />
           </Pressable>
-          <Pressable onPress={onGallery} style={({ pressed }) => [styles.imagePickBtn, { backgroundColor: cardBg, borderColor: subtleBorder, opacity: pressed ? 0.8 : 1 }]}>
-            <LinearGradient colors={[addAlpha(theme.primaryDark, 0.12), addAlpha(theme.primaryDark, 0.05)]} style={styles.imagePickGrad}>
-              <Feather name="image" size={28} color={theme.primaryDark} />
-              <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginTop: 6 }}>المعرض</ThemedText>
-            </LinearGradient>
+          <TextInput
+            value={query}
+            onChangeText={onQueryChange}
+            placeholder="اكتب اسم الدواء أو المادة الفعّالة..."
+            placeholderTextColor={theme.textSecondary}
+            style={[styles2.searchInput, { color: theme.text, fontSize: 17 }]}
+            textAlign="right"
+            returnKeyType="search"
+            onSubmitEditing={onSearch}
+            editable={!isRecognizing}
+          />
+          <Pressable onPress={() => setShowScanSheet(true)} style={styles2.scanBtn} hitSlop={10}>
+            <Animated.View style={scanStyle}>
+              <MaterialCommunityIcons name="line-scan" size={26} color={theme.primaryDark} />
+            </Animated.View>
           </Pressable>
         </View>
 
         {isRecognizing && (
-          <Animated.View entering={FadeIn.duration(300)} style={[styles.recognizingCard, { backgroundColor: addAlpha(theme.primaryDark, 0.08) }]}>
-            <MaterialCommunityIcons name="brain" size={24} color={theme.primaryDark} />
-            <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 10 }}>
+          <Animated.View entering={FadeIn.duration(300)} style={[styles2.recognizingBanner, { backgroundColor: addAlpha(theme.primaryDark, 0.09) }]}>
+            <MaterialCommunityIcons name="brain" size={20} color={theme.primaryDark} />
+            <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 8 }}>
               الذكاء الاصطناعي يتعرّف على الدواء...
             </ThemedText>
           </Animated.View>
         )}
       </Animated.View>
+
+      {/* ── Map ──────────────────────────────────────────────────────────── */}
+      <Animated.View entering={FadeIn.delay(200).duration(500)} style={[styles2.mapContainer, { marginHorizontal: Spacing.lg, marginTop: 18 }]}>
+        {Platform.OS === "web"
+          ? <WebMockMap pharmacies={pharmacies} theme={theme} isDark={isDark} />
+          : <NativePharmacyMap pharmacies={pharmacies} userLocation={userLocation} theme={theme} />
+        }
+      </Animated.View>
+
+      {/* ── Nearby pharmacies section ────────────────────────────────────── */}
+      <View style={{ marginHorizontal: Spacing.lg, marginTop: 18 }}>
+        <View style={[styles2.nearbySection, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
+          <View style={styles2.nearbyHeader}>
+            <Pressable style={styles2.viewAllBtn}>
+              <ThemedText style={{ color: theme.primaryDark, fontWeight: "700", fontSize: 14 }}>عرض الكل</ThemedText>
+              <Feather name="chevron-left" size={16} color={theme.primaryDark} />
+            </Pressable>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <MaterialCommunityIcons name="map-marker-radius" size={22} color={theme.primaryDark} />
+              <ThemedText style={{ color: theme.text, fontWeight: "800", fontSize: 22 }}>الأقرب إليّ</ThemedText>
+            </View>
+          </View>
+
+          {isLoadingPharmacies ? (
+            <>{[0, 1, 2].map(i => <PharmacySkeleton key={i} theme={theme} subtleBorder={subtleBorder} />)}</>
+          ) : pharmacies.length === 0 ? (
+            <View style={{ alignItems: "center", paddingVertical: 32 }}>
+              <MaterialCommunityIcons name="pill" size={40} color={theme.textSecondary} />
+              <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: 12 }}>لا توجد صيدليات قريبة</ThemedText>
+            </View>
+          ) : (
+            pharmacies.map((ph, i) => (
+              <Animated.View key={ph.id} entering={FadeInUp.delay(i * 120).duration(400)}>
+                <PharmacyCard pharmacy={ph} theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} />
+              </Animated.View>
+            ))
+          )}
+        </View>
+      </View>
+
+      {/* ── Scan Bottom Sheet ─────────────────────────────────────────────── */}
+      <Modal visible={showScanSheet} transparent animationType="none" onRequestClose={() => setShowScanSheet(false)}>
+        <Pressable style={styles2.sheetOverlay} onPress={() => setShowScanSheet(false)}>
+          <Animated.View
+            entering={FadeInDown.springify().damping(20).stiffness(220)}
+            style={[styles2.scanSheet, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}
+          >
+            <View style={[styles2.sheetHandle, { backgroundColor: subtleBorder }]} />
+            <ThemedText type="body" style={{ color: theme.text, fontWeight: "800", textAlign: "center", marginBottom: 24, fontSize: 18 }}>
+              صوّر الدواء
+            </ThemedText>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <Pressable
+                onPress={() => { setShowScanSheet(false); setTimeout(onCamera, 280); }}
+                style={({ pressed }) => [styles2.sheetOption, { backgroundColor: addAlpha(theme.primaryDark, 0.07), opacity: pressed ? 0.8 : 1 }]}
+              >
+                <View style={[styles2.sheetOptionIcon, { backgroundColor: theme.primaryDark }]}>
+                  <Feather name="camera" size={28} color="#fff" />
+                </View>
+                <ThemedText type="body" style={{ color: theme.text, fontWeight: "700", marginTop: 12, fontSize: 16 }}>الكاميرا</ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: 3 }}>صوّر علبة الدواء</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => { setShowScanSheet(false); setTimeout(onGallery, 280); }}
+                style={({ pressed }) => [styles2.sheetOption, { backgroundColor: addAlpha(theme.primaryDark, 0.07), opacity: pressed ? 0.8 : 1 }]}
+              >
+                <View style={[styles2.sheetOptionIcon, { backgroundColor: addAlpha(theme.primaryDark, 0.14) }]}>
+                  <Feather name="image" size={28} color={theme.primaryDark} />
+                </View>
+                <ThemedText type="body" style={{ color: theme.text, fontWeight: "700", marginTop: 12, fontSize: 16 }}>المعرض</ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: 3 }}>اختر من صورك</ThemedText>
+              </Pressable>
+            </View>
+            <Pressable onPress={() => setShowScanSheet(false)} style={{ marginTop: 20, paddingVertical: 14, alignItems: "center" }}>
+              <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700" }}>إلغاء</ThemedText>
+            </Pressable>
+          </Animated.View>
+        </Pressable>
+      </Modal>
     </ScrollView>
+  );
+}
+
+// ── Web mock map ───────────────────────────────────────────────────────────────
+
+const MOCK_POSITIONS = [
+  { left: "18%", top: "28%", rating: 4.8 },
+  { left: "56%", top: "18%", rating: 4.6 },
+  { left: "38%", top: "58%", rating: 4.9 },
+  { left: "72%", top: "48%", rating: 4.5 },
+];
+
+function WebMockMap({ pharmacies, theme, isDark }: { pharmacies: NearbyPharmacy[]; theme: BaseProps["theme"]; isDark: boolean }) {
+  const mapBg = isDark ? "#0D1117" : "#131C2E";
+  const items = pharmacies.length > 0
+    ? pharmacies.slice(0, 4).map((ph, i) => ({ ...MOCK_POSITIONS[i % 4], rating: ph.rating }))
+    : MOCK_POSITIONS;
+  return (
+    <View style={{ flex: 1, backgroundColor: mapBg }}>
+      {[35, 62, 20].map((t, i) => (
+        <View key={`h${i}`} style={{ position: "absolute", top: `${t}%` as any, left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.055)" }} />
+      ))}
+      {[22, 50, 72].map((l, i) => (
+        <View key={`v${i}`} style={{ position: "absolute", left: `${l}%` as any, top: 0, bottom: 0, width: 1, backgroundColor: "rgba(255,255,255,0.05)" }} />
+      ))}
+      <View style={{ position: "absolute", left: "44%", top: "43%", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", borderWidth: 4.5, borderColor: "#1F40C8", shadowColor: "#1F40C8", shadowOpacity: 0.9, shadowRadius: 10, elevation: 10 }} />
+      {items.map((pos, i) => (
+        <Animated.View key={i} entering={FadeIn.delay(260 + i * 80).duration(380)} style={{ position: "absolute", left: pos.left as any, top: pos.top as any, alignItems: "center" }}>
+          <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#22C55E", alignItems: "center", justifyContent: "center", borderWidth: 2.5, borderColor: "rgba(255,255,255,0.88)", shadowColor: "#22C55E", shadowOpacity: 0.7, shadowRadius: 12, elevation: 10 }}>
+            <MaterialCommunityIcons name="medical-bag" size={24} color="#fff" />
+          </View>
+          <View style={{ height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: "rgba(10,12,20,0.88)", flexDirection: "row", alignItems: "center", gap: 3, marginTop: 4 }}>
+            <ThemedText style={{ color: "#FFD700", fontSize: 14, lineHeight: 18 }}>★</ThemedText>
+            <ThemedText style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>{pos.rating.toFixed(1)}</ThemedText>
+          </View>
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+
+// ── Native pharmacy map ────────────────────────────────────────────────────────
+
+function NativePharmacyMap({ pharmacies, userLocation, theme }: { pharmacies: NearbyPharmacy[]; userLocation: { latitude: number; longitude: number } | null; theme: BaseProps["theme"] }) {
+  const Maps = require("react-native-maps");
+  const MapView = Maps.default;
+  const { UrlTile, Marker, Circle } = Maps;
+  const centre = userLocation ?? { latitude: 32.6163, longitude: 44.0246 };
+  return (
+    <MapView
+      style={StyleSheet.absoluteFill}
+      provider={Maps.PROVIDER_DEFAULT}
+      mapType="none"
+      initialRegion={{ latitude: centre.latitude, longitude: centre.longitude, latitudeDelta: 0.025, longitudeDelta: 0.025 }}
+      showsCompass={false} rotateEnabled={false} pitchEnabled={false}
+    >
+      <UrlTile urlTemplate="https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
+      <Circle center={centre} radius={700} strokeColor={addAlpha(theme.primaryDark, 0.4)} strokeWidth={1.5} fillColor={addAlpha(theme.primaryDark, 0.07)} />
+      <Marker coordinate={centre}>
+        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", borderWidth: 4.5, borderColor: "#1F40C8" }} />
+      </Marker>
+      {pharmacies.map(ph => (
+        <Marker key={ph.id} coordinate={{ latitude: ph.latitude, longitude: ph.longitude }} title={ph.name}>
+          <View style={{ alignItems: "center" }}>
+            <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#22C55E", alignItems: "center", justifyContent: "center", borderWidth: 2.5, borderColor: "rgba(255,255,255,0.9)" }}>
+              <MaterialCommunityIcons name="medical-bag" size={24} color="#fff" />
+            </View>
+            <View style={{ height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.78)", flexDirection: "row", alignItems: "center", gap: 3, marginTop: 3 }}>
+              <ThemedText style={{ color: "#FFD700", fontSize: 14, lineHeight: 18 }}>★</ThemedText>
+              <ThemedText style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>{ph.rating.toFixed(1)}</ThemedText>
+            </View>
+          </View>
+        </Marker>
+      ))}
+    </MapView>
+  );
+}
+
+// ── Pharmacy card ──────────────────────────────────────────────────────────────
+
+function PharmacyCard({ pharmacy, theme, isDark, cardBg, subtleBorder }: { pharmacy: NearbyPharmacy; theme: BaseProps["theme"]; isDark: boolean; cardBg: string; subtleBorder: string }) {
+  const distStr = pharmacy.distanceM < 1000
+    ? `${pharmacy.distanceM} م`
+    : `${(pharmacy.distanceM / 1000).toFixed(1)} كم`;
+  return (
+    <View style={[styles2.pharmacyCard, { borderBottomColor: subtleBorder }]}>
+      <View style={[styles2.pharmacyImg, { backgroundColor: addAlpha("#22C55E", 0.11) }]}>
+        <MaterialCommunityIcons name="medical-bag" size={38} color="#22C55E" />
+      </View>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
+          <ThemedText numberOfLines={1} style={{ color: theme.text, fontWeight: "800", fontSize: 20, textAlign: "right", flexShrink: 1 }}>{pharmacy.name}</ThemedText>
+          <MaterialCommunityIcons name="check-decagram" size={17} color={theme.primaryDark} />
+        </View>
+        <ThemedText numberOfLines={2} style={{ color: theme.textSecondary, fontSize: 15, lineHeight: 22, textAlign: "right", marginTop: 2 }}>
+          {pharmacy.address}
+        </ThemedText>
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <Pressable style={[styles2.dirBtn, { backgroundColor: isDark ? "#1A2332" : "#EEF2FF" }]}>
+            <Feather name="navigation" size={22} color={theme.primaryDark} />
+          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <ThemedText style={{ color: theme.textSecondary, fontSize: 15, fontWeight: "600" }}>{distStr}</ThemedText>
+            <Feather name="map-pin" size={13} color={theme.textSecondary} />
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <ThemedText style={{ color: theme.textSecondary, fontSize: 15, fontWeight: "600" }}>{pharmacy.rating.toFixed(1)}</ThemedText>
+            <ThemedText style={{ color: "#FFD700", fontSize: 15 }}>★</ThemedText>
+          </View>
+          {pharmacy.hours && (
+            <View style={{ backgroundColor: isDark ? "#1A2332" : "#EEF2FF", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+              <ThemedText style={{ color: theme.primaryDark, fontSize: 12, fontWeight: "600" }}>{pharmacy.hours}</ThemedText>
+            </View>
+          )}
+          <View style={[styles2.openBadge, { backgroundColor: pharmacy.isAvailable ? addAlpha("#22C55E", 0.14) : addAlpha("#EF4444", 0.14) }]}>
+            <ThemedText style={{ color: pharmacy.isAvailable ? "#22C55E" : "#EF4444", fontSize: 14, fontWeight: "700" }}>
+              {pharmacy.isAvailable ? "مفتوح الآن" : "مغلق"}
+            </ThemedText>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── Pharmacy skeleton ──────────────────────────────────────────────────────────
+
+function PharmacySkeleton({ theme, subtleBorder }: { theme: BaseProps["theme"]; subtleBorder: string }) {
+  const shimmer = useSharedValue(0.4);
+  useEffect(() => {
+    shimmer.value = withRepeat(withTiming(0.9, { duration: 1100, easing: Easing.inOut(Easing.ease) }), -1, true);
+  }, []);
+  const shimStyle = useAnimatedStyle(() => ({ opacity: shimmer.value }));
+  return (
+    <Animated.View style={[shimStyle, styles2.pharmacyCard, { borderBottomColor: subtleBorder }]}>
+      <View style={[styles2.pharmacyImg, { backgroundColor: addAlpha(theme.textSecondary, 0.15) }]} />
+      <View style={{ flex: 1, marginRight: 12, gap: 10 }}>
+        <View style={{ height: 20, borderRadius: 8, backgroundColor: addAlpha(theme.textSecondary, 0.2), width: "65%", alignSelf: "flex-end" }} />
+        <View style={{ height: 14, borderRadius: 6, backgroundColor: addAlpha(theme.textSecondary, 0.13), width: "88%", alignSelf: "flex-end" }} />
+        <View style={{ height: 14, borderRadius: 6, backgroundColor: addAlpha(theme.textSecondary, 0.1), width: "45%", alignSelf: "flex-end" }} />
+      </View>
+    </Animated.View>
   );
 }
 
@@ -1120,4 +1361,29 @@ const styles = StyleSheet.create({
   customReasonInput: { borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md, minHeight: 80, fontFamily: "Cairo-Regular", marginBottom: Spacing.md, textAlignVertical: "top" },
   modalBtns:    { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.md },
   modalBtn:     { flex: 1, paddingVertical: Spacing.md, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center" },
+});
+
+const styles2 = StyleSheet.create({
+  searchBar:         { height: 66, borderRadius: 28, flexDirection: "row", alignItems: "center", paddingHorizontal: 6, gap: 2 },
+  searchBtn:         { width: 56, height: 56, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  searchInput:       { flex: 1, paddingHorizontal: 10, fontWeight: "500" },
+  scanBtn:           { width: 46, height: 46, alignItems: "center", justifyContent: "center", borderRadius: 16 },
+  recognizingBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 10, padding: 10, borderRadius: 16 },
+
+  mapContainer: { height: 320, borderRadius: 30, overflow: "hidden" },
+
+  nearbySection: { borderRadius: 28, padding: 14, overflow: "hidden" },
+  nearbyHeader:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  viewAllBtn:    { flexDirection: "row", alignItems: "center", gap: 2 },
+
+  pharmacyCard: { height: 148, flexDirection: "row", alignItems: "center", padding: 12, marginBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  pharmacyImg:  { width: 92, height: 92, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  openBadge:    { height: 32, paddingHorizontal: 14, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  dirBtn:       { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+
+  sheetOverlay:    { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  scanSheet:       { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 38 },
+  sheetHandle:     { width: 44, height: 5, borderRadius: 3, alignSelf: "center", marginBottom: 20 },
+  sheetOption:     { flex: 1, borderRadius: 24, padding: 20, alignItems: "center" },
+  sheetOptionIcon: { width: 64, height: 64, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 });
