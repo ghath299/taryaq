@@ -42,12 +42,11 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
 }
 
 import { useFonts } from "expo-font";
-import { Asset } from "expo-asset";
 import * as SplashScreen from "expo-splash-screen";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, View, Image } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -88,11 +87,24 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
 
 const queryClient = new QueryClient();
 
+const IMAGES_TO_PRELOAD = [
+  require("../assets/images/doctor-consultation-light.jpeg"),
+  require("../assets/images/doctor-consultation-dark.jpeg"),
+  require("../assets/images/doctor-ahmed.png"),
+  require("../assets/images/doctor-sara.png"),
+  require("../assets/images/doctor-ali.png"),
+  require("../assets/images/banner-phone.png"),
+  require("../assets/images/water-glass.png"),
+  require("../assets/images/health-shield.png"),
+  require("../assets/images/user-avatar.png"),
+  require("../assets/images/doctor-consultation.png"),
+];
+
 function RootLayoutNav() {
   useNotificationSetup();
 
   return (
-    <Stack screenOptions={{ headerShown: false, headerStatusBarHeight: Platform.OS === "web" ? 50 : undefined }}>
+    <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -165,19 +177,6 @@ function RootLayoutNav() {
   );
 }
 
-const IMAGES_TO_PRELOAD = [
-  require("../assets/images/doctor-consultation-light.jpeg"),
-  require("../assets/images/doctor-consultation-dark.jpeg"),
-  require("../assets/images/doctor-ahmed.png"),
-  require("../assets/images/doctor-sara.png"),
-  require("../assets/images/doctor-ali.png"),
-  require("../assets/images/banner-phone.png"),
-  require("../assets/images/water-glass.png"),
-  require("../assets/images/health-shield.png"),
-  require("../assets/images/user-avatar.png"),
-  require("../assets/images/doctor-consultation.png"),
-];
-
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
 
@@ -193,17 +192,29 @@ export default function RootLayout() {
         },
   );
 
+  const onLayoutRoot = useCallback(() => {}, []);
+
   useEffect(() => {
     if (!fontsLoaded && Platform.OS !== "web") return;
-    Asset.loadAsync(IMAGES_TO_PRELOAD)
-      .catch(() => {})
-      .finally(async () => {
-        setAppReady(true);
-        await SplashScreen.hideAsync().catch(() => {});
-      });
+    // تحميل الصور بدون expo-asset
+    if (Platform.OS === "web") {
+      setAppReady(true);
+      SplashScreen.hideAsync().catch(() => {});
+      return;
+    }
+    const preload = async () => {
+      try {
+        await Promise.all(
+          IMAGES_TO_PRELOAD.map((src) =>
+            Image.prefetch(typeof src === "string" ? src : "")
+          )
+        );
+      } catch {}
+      setAppReady(true);
+      await SplashScreen.hideAsync().catch(() => {});
+    };
+    preload();
   }, [fontsLoaded]);
-
-  const onLayoutRoot = useCallback(() => {}, []);
 
   return (
     <SafeAreaProvider>
