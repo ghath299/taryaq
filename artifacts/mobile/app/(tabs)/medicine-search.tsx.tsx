@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -9,10 +9,22 @@ import {
   Modal,
   Platform,
   Image,
-  TouchableOpacity,
 } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+// react-native-maps لا تدعم الويب — نستورد بشكل مشروط
+const isNative = Platform.OS !== "web";
+let MapView: any = null;
+let Marker: any = null;
+let PROVIDER_GOOGLE: any = null;
+if (isNative) {
+  const Maps = require("react-native-maps");
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+}
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,7 +50,9 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
-import MedicineSearchMapScreen, { type FoundPharmacy } from "@/components/MedicineSearchMapScreen";
+import MedicineSearchMapScreen, {
+  type FoundPharmacy,
+} from "@/components/MedicineSearchMapScreen";
 import { getApiUrl } from "@/lib/query-client";
 
 interface NearbyPharmacy {
@@ -53,7 +67,14 @@ interface NearbyPharmacy {
   imageUrl?: string;
 }
 
-type Step = "input" | "confirm" | "searching" | "delivery" | "rate" | "doses" | "done";
+type Step =
+  | "input"
+  | "confirm"
+  | "searching"
+  | "delivery"
+  | "rate"
+  | "doses"
+  | "done";
 
 interface DrugInfo {
   name: string;
@@ -66,10 +87,10 @@ interface DrugInfo {
 
 const RADIUS_OPTIONS = [
   { label: "500 م", value: 500 },
-  { label: "1 كم",  value: 1000 },
-  { label: "2 كم",  value: 2000 },
-  { label: "3 كم",  value: 3000 },
-  { label: "5 كم",  value: 5000 },
+  { label: "1 كم", value: 1000 },
+  { label: "2 كم", value: 2000 },
+  { label: "3 كم", value: 3000 },
+  { label: "5 كم", value: 5000 },
 ];
 
 const CANCEL_REASONS = [
@@ -81,13 +102,13 @@ const CANCEL_REASONS = [
 ];
 
 const STEP_TITLES: Record<Step, string> = {
-  input:    "البحث عن دواء",
-  confirm:  "تأكيد الدواء",
-  searching:"جارٍ البحث",
+  input: "البحث عن دواء",
+  confirm: "تأكيد الدواء",
+  searching: "جارٍ البحث",
   delivery: "الصيدلية في الطريق",
-  rate:     "قيّم الصيدلية",
-  doses:    "معلومات الجرعة",
-  done:     "تم الحفظ",
+  rate: "قيّم الصيدلية",
+  doses: "معلومات الجرعة",
+  done: "تم الحفظ",
 };
 
 export default function MedicineSearchScreen() {
@@ -95,19 +116,21 @@ export default function MedicineSearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [step, setStep]             = useState<Step>("input");
-  const [query, setQuery]           = useState("");
+  const [step, setStep] = useState<Step>("input");
+  const [query, setQuery] = useState("");
   const [isRecognizing, setIsRecognizing] = useState(false);
-  const [drugInfo, setDrugInfo]     = useState<DrugInfo | null>(null);
+  const [drugInfo, setDrugInfo] = useState<DrugInfo | null>(null);
   const [searchRadius, setSearchRadius] = useState(500);
   const [isSearchingActive, setIsSearchingActive] = useState(false);
-  const [foundPharmacy, setFoundPharmacy] = useState<FoundPharmacy | null>(null);
+  const [foundPharmacy, setFoundPharmacy] = useState<FoundPharmacy | null>(
+    null,
+  );
 
   const [deliveryMinutes, setDeliveryMinutes] = useState(15);
-  const [extensionCount, setExtensionCount]   = useState(0);
+  const [extensionCount, setExtensionCount] = useState(0);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelReason, setCancelReason]       = useState("");
-  const [customReason, setCustomReason]       = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [customReason, setCustomReason] = useState("");
 
   const [rating, setRating] = useState(0);
 
@@ -118,17 +141,24 @@ export default function MedicineSearchScreen() {
   } | null>(null);
 
   // Dose info — pillsInBox replaces the old "total pills" manual field
-  const [dailyDoses, setDailyDoses]   = useState(2);
+  const [dailyDoses, setDailyDoses] = useState(2);
   const [pillsPerDose, setPillsPerDose] = useState(1);
-  const [pillsInBox, setPillsInBox]   = useState(20);
-  const [isChronic, setIsChronic]     = useState(false);
+  const [pillsInBox, setPillsInBox] = useState(20);
+  const [isChronic, setIsChronic] = useState(false);
 
   // Location & routing
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [routeCoords, setRouteCoords]   = useState<{ latitude: number; longitude: number }[] | null>(null);
-  const [nearbyPharmacies, setNearbyPharmacies] = useState<NearbyPharmacy[]>([]);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [routeCoords, setRouteCoords] = useState<
+    { latitude: number; longitude: number }[] | null
+  >(null);
+  const [nearbyPharmacies, setNearbyPharmacies] = useState<NearbyPharmacy[]>(
+    [],
+  );
 
-  const cardBg      = isDark ? theme.card : "#FFFFFF";
+  const cardBg = isDark ? theme.card : "#FFFFFF";
   const subtleBorder = isDark ? "#21262D" : "#E5EEF5";
 
   // ── Watch real GPS location live ────────────────────────────────────────────
@@ -175,10 +205,10 @@ export default function MedicineSearchScreen() {
     const fetchNearby = async () => {
       try {
         const resp = await fetch(
-          `${getApiUrl()}/api/pharmacies/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius=2000`
+          `${getApiUrl()}/api/pharmacies/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius=2000`,
         );
         if (resp.ok) {
-          const data = await resp.json() as { pharmacies?: NearbyPharmacy[] };
+          const data = (await resp.json()) as { pharmacies?: NearbyPharmacy[] };
           if (data.pharmacies) setNearbyPharmacies(data.pharmacies);
         }
       } catch {
@@ -190,9 +220,10 @@ export default function MedicineSearchScreen() {
 
   // ── Computed: auto days-supply from box size ─────────────────────────────────
   const dailyConsumption = dailyDoses * pillsPerDose;
-  const daysSupply = isChronic || dailyConsumption === 0
-    ? null
-    : Math.floor(pillsInBox / dailyConsumption);
+  const daysSupply =
+    isChronic || dailyConsumption === 0
+      ? null
+      : Math.floor(pillsInBox / dailyConsumption);
   const endDate = daysSupply
     ? new Date(Date.now() + daysSupply * 86400000).toLocaleDateString("ar-IQ")
     : null;
@@ -212,9 +243,9 @@ export default function MedicineSearchScreen() {
         }
 
         const resp = await fetch(`${getApiUrl()}/api/medication/search`, {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(body),
+          body: JSON.stringify(body),
         });
 
         let data: {
@@ -235,37 +266,47 @@ export default function MedicineSearchScreen() {
         try {
           data = await resp.json();
         } catch {
-          throw new Error("لم نتمكن من قراءة رد الخادم. تأكد من الاتصال وأعد المحاولة.");
+          throw new Error(
+            "لم نتمكن من قراءة رد الخادم. تأكد من الاتصال وأعد المحاولة.",
+          );
         }
 
         if (!resp.ok) {
-          throw new Error(data.error ?? data.message ?? `خطأ في الخادم (${resp.status})`);
+          throw new Error(
+            data.error ?? data.message ?? `خطأ في الخادم (${resp.status})`,
+          );
         }
 
         // ── Server signals the image is not a drug ──────────────────────────
         if (data.success === false) {
           setNotDrugError({
-            message: data.funnyMessage ?? data.message ?? "الصورة لا تحتوي على دواء واضح",
+            message:
+              data.funnyMessage ??
+              data.message ??
+              "الصورة لا تحتوي على دواء واضح",
             actions: data.actions ?? [
-              { key: "retake",         label: "إعادة التصوير" },
+              { key: "retake", label: "إعادة التصوير" },
               { key: "search_by_name", label: "البحث بالاسم" },
-              { key: "gallery",        label: "فتح المعرض" },
+              { key: "gallery", label: "فتح المعرض" },
             ],
           });
           return;
         }
 
         setDrugInfo({
-          name:             data.name ?? data.medicationName ?? name,
-          manufacturer:     data.manufacturer ?? "",
-          usage:            data.usage ?? "",
-          dosage:           data.dosage ?? "",
+          name: data.name ?? data.medicationName ?? name,
+          manufacturer: data.manufacturer ?? "",
+          usage: data.usage ?? "",
+          dosage: data.dosage ?? "",
           activeIngredient: data.activeIngredient ?? "",
           imageUri,
         });
         setStep("confirm");
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "تعذّر التعرف على الدواء. تأكد من الاتصال وأعد المحاولة.";
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "تعذّر التعرف على الدواء. تأكد من الاتصال وأعد المحاولة.";
         Alert.alert("خطأ في التعرف على الدواء", msg, [{ text: "حسناً" }]);
       } finally {
         setIsRecognizing(false);
@@ -286,7 +327,11 @@ export default function MedicineSearchScreen() {
       base64: true,
     });
     if (!result.canceled && result.assets[0]) {
-      await recognizeDrug("", result.assets[0].uri, result.assets[0].base64 ?? undefined);
+      await recognizeDrug(
+        "",
+        result.assets[0].uri,
+        result.assets[0].base64 ?? undefined,
+      );
     }
   };
 
@@ -301,42 +346,52 @@ export default function MedicineSearchScreen() {
       base64: true,
     });
     if (!result.canceled && result.assets[0]) {
-      await recognizeDrug("", result.assets[0].uri, result.assets[0].base64 ?? undefined);
+      await recognizeDrug(
+        "",
+        result.assets[0].uri,
+        result.assets[0].base64 ?? undefined,
+      );
     }
   };
 
   // ── After pharmacy accepts: fetch street route ───────────────────────────────
-  const handlePharmacyFound = useCallback(async (pharmacy: FoundPharmacy) => {
-    setFoundPharmacy(pharmacy);
-    setIsSearchingActive(false);
-    setDeliveryMinutes(Math.round((pharmacy.distanceM / 1000) * 5) + 10);
+  const handlePharmacyFound = useCallback(
+    async (pharmacy: FoundPharmacy) => {
+      setFoundPharmacy(pharmacy);
+      setIsSearchingActive(false);
+      setDeliveryMinutes(Math.round((pharmacy.distanceM / 1000) * 5) + 10);
 
-    if (userLocation) {
-      try {
-        const resp = await fetch(`${getApiUrl()}/api/medication/route`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fromLat: userLocation.latitude,
-            fromLng: userLocation.longitude,
-            toLat:   pharmacy.latitude,
-            toLng:   pharmacy.longitude,
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json() as { coordinates?: { latitude: number; longitude: number }[] };
-          if (data.coordinates) setRouteCoords(data.coordinates);
+      if (userLocation) {
+        try {
+          const resp = await fetch(`${getApiUrl()}/api/medication/route`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fromLat: userLocation.latitude,
+              fromLng: userLocation.longitude,
+              toLat: pharmacy.latitude,
+              toLng: pharmacy.longitude,
+            }),
+          });
+          if (resp.ok) {
+            const data = (await resp.json()) as {
+              coordinates?: { latitude: number; longitude: number }[];
+            };
+            if (data.coordinates) setRouteCoords(data.coordinates);
+          }
+        } catch {
+          // routing failed — map will show straight line or no line
         }
-      } catch {
-        // routing failed — map will show straight line or no line
       }
-    }
 
-    setTimeout(() => setStep("delivery"), 800);
-  }, [userLocation]);
+      setTimeout(() => setStep("delivery"), 800);
+    },
+    [userLocation],
+  );
 
   const startSearch = () => {
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSearchingActive(true);
   };
 
@@ -347,7 +402,8 @@ export default function MedicineSearchScreen() {
     }
     setDeliveryMinutes((prev) => prev + extra);
     setExtensionCount((prev) => prev + 1);
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleCancel = () => {
@@ -368,28 +424,44 @@ export default function MedicineSearchScreen() {
   const handleConfirmReceipt = () => setStep("rate");
 
   const handleSubmitRating = () => {
-    if (rating === 0) { Alert.alert("مطلوب", "يرجى تقييم الصيدلية"); return; }
+    if (rating === 0) {
+      Alert.alert("مطلوب", "يرجى تقييم الصيدلية");
+      return;
+    }
     setStep("doses");
   };
 
   const handleSaveDoses = () => {
-    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== "web")
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setStep("done");
   };
 
   const goBack = () => {
-    const backMap: Partial<Record<Step, Step>> = { confirm: "input", searching: "confirm" };
+    const backMap: Partial<Record<Step, Step>> = {
+      confirm: "input",
+      searching: "confirm",
+    };
     const prev = backMap[step];
-    if (prev) { setStep(prev); if (step === "searching") setIsSearchingActive(false); }
-    else router.back();
+    if (prev) {
+      setStep(prev);
+      if (step === "searching") setIsSearchingActive(false);
+    } else router.back();
   };
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+    <SafeAreaView
+      edges={["top"]}
+      style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.header, { borderBottomColor: subtleBorder }]}>
-        <Pressable onPress={goBack} style={styles.headerBtn} accessibilityRole="button">
+        <Pressable
+          onPress={goBack}
+          style={styles.headerBtn}
+          accessibilityRole="button"
+        >
           <Feather name="arrow-right" size={22} color={theme.text} />
         </Pressable>
         <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800" }}>
@@ -410,7 +482,11 @@ export default function MedicineSearchScreen() {
           onDismissError={() => setNotDrugError(null)}
           nearbyPharmacies={nearbyPharmacies}
           userLocation={userLocation}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -419,7 +495,11 @@ export default function MedicineSearchScreen() {
           drug={drugInfo}
           onConfirm={() => setStep("searching")}
           onChange={() => setStep("input")}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -433,7 +513,11 @@ export default function MedicineSearchScreen() {
           onPharmacyFound={handlePharmacyFound}
           onCancel={() => setShowCancelModal(true)}
           userLocation={userLocation}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -448,7 +532,11 @@ export default function MedicineSearchScreen() {
           onCancel={() => setShowCancelModal(true)}
           userLocation={userLocation}
           routeCoords={routeCoords}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -458,7 +546,11 @@ export default function MedicineSearchScreen() {
           rating={rating}
           onRate={setRating}
           onSubmit={handleSubmitRating}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -476,7 +568,11 @@ export default function MedicineSearchScreen() {
           onPillsInBox={setPillsInBox}
           onChronic={setIsChronic}
           onSave={handleSaveDoses}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
@@ -489,14 +585,29 @@ export default function MedicineSearchScreen() {
           isChronic={isChronic}
           onHome={() => router.replace("/(tabs)")}
           onMyMeds={() => router.push("/my-medications")}
-          theme={theme} isDark={isDark} cardBg={cardBg} subtleBorder={subtleBorder} insets={insets}
+          theme={theme}
+          isDark={isDark}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+          insets={insets}
         />
       )}
 
       <Modal visible={showCancelModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <Animated.View entering={FadeInDown.duration(300)} style={[styles.modalSheet, { backgroundColor: cardBg }]}>
-            <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", textAlign: "right", marginBottom: Spacing.md }}>
+          <Animated.View
+            entering={FadeInDown.duration(300)}
+            style={[styles.modalSheet, { backgroundColor: cardBg }]}
+          >
+            <ThemedText
+              type="h3"
+              style={{
+                color: theme.text,
+                fontWeight: "800",
+                textAlign: "right",
+                marginBottom: Spacing.md,
+              }}
+            >
               سبب الإلغاء
             </ThemedText>
             {CANCEL_REASONS.map((r) => (
@@ -505,13 +616,45 @@ export default function MedicineSearchScreen() {
                 onPress={() => setCancelReason(r)}
                 style={[
                   styles.reasonRow,
-                  { borderColor: cancelReason === r ? theme.primaryDark : subtleBorder, backgroundColor: cancelReason === r ? addAlpha(theme.primaryDark, 0.07) : "transparent" },
+                  {
+                    borderColor:
+                      cancelReason === r ? theme.primaryDark : subtleBorder,
+                    backgroundColor:
+                      cancelReason === r
+                        ? addAlpha(theme.primaryDark, 0.07)
+                        : "transparent",
+                  },
                 ]}
               >
-                <View style={[styles.radioOuter, { borderColor: cancelReason === r ? theme.primaryDark : theme.textSecondary }]}>
-                  {cancelReason === r && <View style={[styles.radioInner, { backgroundColor: theme.primaryDark }]} />}
+                <View
+                  style={[
+                    styles.radioOuter,
+                    {
+                      borderColor:
+                        cancelReason === r
+                          ? theme.primaryDark
+                          : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  {cancelReason === r && (
+                    <View
+                      style={[
+                        styles.radioInner,
+                        { backgroundColor: theme.primaryDark },
+                      ]}
+                    />
+                  )}
                 </View>
-                <ThemedText type="body" style={{ color: theme.text, marginRight: Spacing.sm, flex: 1, textAlign: "right" }}>
+                <ThemedText
+                  type="body"
+                  style={{
+                    color: theme.text,
+                    marginRight: Spacing.sm,
+                    flex: 1,
+                    textAlign: "right",
+                  }}
+                >
                   {r}
                 </ThemedText>
               </Pressable>
@@ -522,17 +665,39 @@ export default function MedicineSearchScreen() {
                 onChangeText={setCustomReason}
                 placeholder="اكتب السبب هنا..."
                 placeholderTextColor={theme.textSecondary}
-                style={[styles.customReasonInput, { color: theme.text, borderColor: subtleBorder }]}
+                style={[
+                  styles.customReasonInput,
+                  { color: theme.text, borderColor: subtleBorder },
+                ]}
                 textAlign="right"
                 multiline
               />
             )}
             <View style={styles.modalBtns}>
-              <Pressable onPress={() => setShowCancelModal(false)} style={[styles.modalBtn, { borderColor: subtleBorder }]}>
-                <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700" }}>رجوع</ThemedText>
+              <Pressable
+                onPress={() => setShowCancelModal(false)}
+                style={[styles.modalBtn, { borderColor: subtleBorder }]}
+              >
+                <ThemedText
+                  type="body"
+                  style={{ color: theme.textSecondary, fontWeight: "700" }}
+                >
+                  رجوع
+                </ThemedText>
               </Pressable>
-              <Pressable onPress={handleCancel} style={[styles.modalBtn, { backgroundColor: theme.error, borderColor: theme.error }]}>
-                <ThemedText type="body" style={{ color: "#fff", fontWeight: "700" }}>تأكيد الإلغاء</ThemedText>
+              <Pressable
+                onPress={handleCancel}
+                style={[
+                  styles.modalBtn,
+                  { backgroundColor: theme.error, borderColor: theme.error },
+                ]}
+              >
+                <ThemedText
+                  type="body"
+                  style={{ color: "#fff", fontWeight: "700" }}
+                >
+                  تأكيد الإلغاء
+                </ThemedText>
               </Pressable>
             </View>
           </Animated.View>
@@ -554,13 +719,18 @@ interface BaseProps {
 
 // ── Animated pharmacy card ─────────────────────────────────────────────────────
 
-function PharmacyCard({ ph, index, theme, cardBg, subtleBorder, isDark }: {
+function PharmacyCard({
+  ph,
+  index,
+  theme,
+  cardBg,
+  subtleBorder,
+}: {
   ph: NearbyPharmacy;
   index: number;
   theme: ReturnType<typeof useTheme>["theme"];
   cardBg: string;
   subtleBorder: string;
-  isDark: boolean;
 }) {
   const scale = useSharedValue(1);
 
@@ -570,36 +740,135 @@ function PharmacyCard({ ph, index, theme, cardBg, subtleBorder, isDark }: {
 
   return (
     <Animated.View
-      entering={FadeInUp.duration(450).delay(index * 120).springify().damping(14)}
+      entering={FadeInUp.duration(450)
+        .delay(index * 120)
+        .springify()
+        .damping(14)}
       style={animStyle}
     >
       <Pressable
-        onPressIn={() => { scale.value = withSpring(0.97, { damping: 15 }); }}
-        onPressOut={() => { scale.value = withSpring(1, { damping: 12 }); }}
-        style={[styles.pharmacyCard, { backgroundColor: cardBg, borderColor: subtleBorder, marginBottom: 12 }]}
+        onPressIn={() => {
+          scale.value = withSpring(0.97, { damping: 15 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 12 });
+        }}
+        style={[
+          styles.pharmacyCard,
+          {
+            backgroundColor: cardBg,
+            borderColor: subtleBorder,
+            marginBottom: 12,
+          },
+        ]}
       >
         {ph.imageUrl ? (
-          <Image source={{ uri: ph.imageUrl }} style={styles.pharmacyImage} resizeMode="cover" />
+          <Image
+            source={{ uri: ph.imageUrl }}
+            style={styles.pharmacyImage}
+            resizeMode="cover"
+          />
         ) : (
-          <View style={[styles.pharmacyImage, { backgroundColor: addAlpha(theme.primaryDark, 0.1), alignItems: "center", justifyContent: "center" }]}>
-            <MaterialCommunityIcons name="pharmacy" size={32} color={theme.primaryDark} />
+          <View
+            style={[
+              styles.pharmacyImage,
+              {
+                backgroundColor: addAlpha(theme.primaryDark, 0.1),
+                alignItems: "center",
+                justifyContent: "center",
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="pill"
+              size={32}
+              color={theme.primaryDark}
+            />
           </View>
         )}
         <View style={{ flex: 1, marginRight: 12, gap: 4 }}>
-          <ThemedText style={{ fontSize: 22, fontWeight: "800", color: theme.text, textAlign: "right" }}>{ph.name}</ThemedText>
-          <ThemedText style={{ fontSize: 15, lineHeight: 22, color: theme.textSecondary, textAlign: "right" }} numberOfLines={2}>{ph.address}</ThemedText>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-            <Pressable style={({ pressed }) => [styles.directionBtn, { backgroundColor: theme.primaryDark, opacity: pressed ? 0.85 : 1 }]}>
+          <ThemedText
+            style={{
+              fontSize: 22,
+              fontWeight: "800",
+              color: theme.text,
+              textAlign: "right",
+            }}
+          >
+            {ph.name}
+          </ThemedText>
+          <ThemedText
+            style={{
+              fontSize: 15,
+              lineHeight: 22,
+              color: theme.textSecondary,
+              textAlign: "right",
+            }}
+            numberOfLines={2}
+          >
+            {ph.address}
+          </ThemedText>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 4,
+            }}
+          >
+            <Pressable
+              style={({ pressed }) => [
+                styles.directionBtn,
+                {
+                  backgroundColor: theme.primaryDark,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
               <Feather name="navigation" size={22} color="#fff" />
             </Pressable>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <ThemedText style={{ fontSize: 15, fontWeight: "600", color: theme.textSecondary }}>
-                📍 {ph.distanceM >= 1000 ? `${(ph.distanceM / 1000).toFixed(1)} كم` : `${ph.distanceM} م`}
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <ThemedText
+                style={{
+                  fontSize: 15,
+                  fontWeight: "600",
+                  color: theme.textSecondary,
+                }}
+              >
+                📍{" "}
+                {ph.distanceM >= 1000
+                  ? `${(ph.distanceM / 1000).toFixed(1)} كم`
+                  : `${ph.distanceM} م`}
               </ThemedText>
-              <ThemedText style={{ fontSize: 15, fontWeight: "600", color: theme.warning }}>★ {ph.rating.toFixed(1)}</ThemedText>
+              <ThemedText
+                style={{
+                  fontSize: 15,
+                  fontWeight: "600",
+                  color: theme.warning,
+                }}
+              >
+                ★ {ph.rating.toFixed(1)}
+              </ThemedText>
             </View>
-            <View style={[styles.openBadge, { backgroundColor: ph.isOpen ? addAlpha("#22C55E", 0.15) : addAlpha(theme.error, 0.12) }]}>
-              <ThemedText style={{ fontSize: 14, fontWeight: "700", color: ph.isOpen ? "#16A34A" : theme.error }}>
+            <View
+              style={[
+                styles.openBadge,
+                {
+                  backgroundColor: ph.isOpen
+                    ? addAlpha("#22C55E", 0.15)
+                    : addAlpha(theme.error, 0.12),
+                },
+              ]}
+            >
+              <ThemedText
+                style={{
+                  fontSize: 14,
+                  fontWeight: "700",
+                  color: ph.isOpen ? "#16A34A" : theme.error,
+                }}
+              >
                 {ph.isOpen ? "مفتوح الآن" : "مغلق"}
               </ThemedText>
             </View>
@@ -612,14 +881,18 @@ function PharmacyCard({ ph, index, theme, cardBg, subtleBorder, isDark }: {
 
 // ── Animated map marker with pulse glow ────────────────────────────────────────
 
-function PulseMarker({ theme }: { theme: ReturnType<typeof useTheme>["theme"] }) {
+function PulseMarker({
+  theme,
+}: {
+  theme: ReturnType<typeof useTheme>["theme"];
+}) {
   const pulse = useSharedValue(1);
 
   useEffect(() => {
     pulse.value = withRepeat(
       withSequence(
         withTiming(1.35, { duration: 900, easing: Easing.out(Easing.ease) }),
-        withTiming(1,    { duration: 900, easing: Easing.in(Easing.ease) }),
+        withTiming(1, { duration: 900, easing: Easing.in(Easing.ease) }),
       ),
       -1,
       false,
@@ -633,7 +906,14 @@ function PulseMarker({ theme }: { theme: ReturnType<typeof useTheme>["theme"] })
 
   return (
     <View style={{ alignItems: "center" }}>
-      <View style={{ width: 70, height: 70, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          width: 70,
+          height: 70,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <Animated.View style={[styles.markerGlow, glowStyle]} />
         <View style={styles.mapMarker}>
           <MaterialCommunityIcons name="plus" size={24} color="#fff" />
@@ -645,14 +925,33 @@ function PulseMarker({ theme }: { theme: ReturnType<typeof useTheme>["theme"] })
 
 // ── Step: input ────────────────────────────────────────────────────────────────
 
-function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, onGallery, notDrugError, onDismissError, nearbyPharmacies, userLocation, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepInput({
+  query,
+  onQueryChange,
+  isRecognizing,
+  onSearch,
+  onCamera,
+  onGallery,
+  notDrugError,
+  onDismissError,
+  nearbyPharmacies,
+  userLocation,
+  theme,
+  isDark,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   query: string;
   onQueryChange: (v: string) => void;
   isRecognizing: boolean;
   onSearch: () => void;
   onCamera: () => void;
   onGallery: () => void;
-  notDrugError: { message: string; actions: { key: string; label: string }[] } | null;
+  notDrugError: {
+    message: string;
+    actions: { key: string; label: string }[];
+  } | null;
   onDismissError: () => void;
   nearbyPharmacies: NearbyPharmacy[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -662,13 +961,18 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
   // أنيميشن نبض أيقونة الـscan
   const scanPulse = useSharedValue(1);
   useEffect(() => {
-    scanPulse.value = withDelay(1200,
+    scanPulse.value = withDelay(
+      1200,
       withRepeat(
         withSequence(
-          withTiming(1.18, { duration: 700, easing: Easing.inOut(Easing.ease) }),
-          withTiming(1,    { duration: 700, easing: Easing.inOut(Easing.ease) }),
+          withTiming(1.18, {
+            duration: 700,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          withTiming(1, { duration: 700, easing: Easing.inOut(Easing.ease) }),
         ),
-        -1, false,
+        -1,
+        false,
       ),
     );
   }, []);
@@ -678,53 +982,180 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
   }));
 
   const mapRegion = userLocation
-    ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 0.018, longitudeDelta: 0.018 }
-    : { latitude: 32.5, longitude: 44.0, latitudeDelta: 0.018, longitudeDelta: 0.018 };
+    ? {
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.018,
+        longitudeDelta: 0.018,
+      }
+    : {
+        latitude: 32.5,
+        longitude: 44.0,
+        latitudeDelta: 0.018,
+        longitudeDelta: 0.018,
+      };
 
   return (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: insets.bottom + 24, gap: 18 }}>
-
+    <ScrollView
+      contentContainerStyle={{
+        paddingHorizontal: 20,
+        paddingTop: 18,
+        paddingBottom: insets.bottom + 24,
+        gap: 18,
+      }}
+    >
       {/* ── Not-drug error card ───────────────────────────────────────── */}
       {notDrugError && (
         <Animated.View
           entering={FadeInDown.duration(350)}
-          style={[styles.notDrugCard, { backgroundColor: cardBg, borderColor: addAlpha(theme.error ?? "#E53E3E", 0.35) }]}
+          style={[
+            styles.notDrugCard,
+            {
+              backgroundColor: cardBg,
+              borderColor: addAlpha(theme.error ?? "#E53E3E", 0.35),
+            },
+          ]}
         >
-          <View style={[styles.notDrugIconWrap, { backgroundColor: addAlpha(theme.error ?? "#E53E3E", 0.1) }]}>
-            <MaterialCommunityIcons name="image-off-outline" size={36} color={theme.error ?? "#E53E3E"} />
+          <View
+            style={[
+              styles.notDrugIconWrap,
+              { backgroundColor: addAlpha(theme.error ?? "#E53E3E", 0.1) },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="image-off-outline"
+              size={36}
+              color={theme.error ?? "#E53E3E"}
+            />
           </View>
-          <ThemedText type="body" style={{ color: theme.text, fontWeight: "800", textAlign: "center", marginTop: Spacing.md }}>
+          <ThemedText
+            type="body"
+            style={{
+              color: theme.text,
+              fontWeight: "800",
+              textAlign: "center",
+              marginTop: Spacing.md,
+            }}
+          >
             لم يُتعرَّف على دواء
           </ThemedText>
-          <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", marginTop: Spacing.xs, lineHeight: 22 }}>
+          <ThemedText
+            type="small"
+            style={{
+              color: theme.textSecondary,
+              textAlign: "center",
+              marginTop: Spacing.xs,
+              lineHeight: 22,
+            }}
+          >
             {notDrugError.message}
           </ThemedText>
           <View style={styles.notDrugActions}>
-            <Pressable onPress={onCamera} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: theme.primaryDark, opacity: pressed ? 0.85 : 1 }]}>
+            <Pressable
+              onPress={onCamera}
+              style={({ pressed }) => [
+                styles.notDrugBtn,
+                {
+                  backgroundColor: theme.primaryDark,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
               <Feather name="camera" size={15} color="#fff" />
-              <ThemedText type="small" style={{ color: "#fff", fontWeight: "700", marginRight: 4 }}>إعادة التصوير</ThemedText>
+              <ThemedText
+                type="small"
+                style={{ color: "#fff", fontWeight: "700", marginRight: 4 }}
+              >
+                إعادة التصوير
+              </ThemedText>
             </Pressable>
-            <Pressable onPress={onGallery} style={({ pressed }) => [styles.notDrugBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.12), opacity: pressed ? 0.85 : 1 }]}>
+            <Pressable
+              onPress={onGallery}
+              style={({ pressed }) => [
+                styles.notDrugBtn,
+                {
+                  backgroundColor: addAlpha(theme.primaryDark, 0.12),
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
               <Feather name="image" size={15} color={theme.primaryDark} />
-              <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>فتح المعرض</ThemedText>
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.primaryDark,
+                  fontWeight: "700",
+                  marginRight: 4,
+                }}
+              >
+                فتح المعرض
+              </ThemedText>
             </Pressable>
           </View>
           <View style={[styles.notDrugActions, { marginTop: Spacing.xs }]}>
-            <Pressable onPress={() => { onDismissError(); }} style={({ pressed }) => [styles.notDrugBtn, { flex: 1, backgroundColor: addAlpha(theme.primaryDark, 0.07), opacity: pressed ? 0.85 : 1 }]}>
+            <Pressable
+              onPress={() => {
+                onDismissError();
+              }}
+              style={({ pressed }) => [
+                styles.notDrugBtn,
+                {
+                  flex: 1,
+                  backgroundColor: addAlpha(theme.primaryDark, 0.07),
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
               <Feather name="edit-2" size={15} color={theme.primaryDark} />
-              <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 4 }}>البحث بالاسم</ThemedText>
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.primaryDark,
+                  fontWeight: "700",
+                  marginRight: 4,
+                }}
+              >
+                البحث بالاسم
+              </ThemedText>
             </Pressable>
-            <Pressable onPress={onDismissError} style={({ pressed }) => [styles.notDrugBtnOutline, { borderColor: subtleBorder, opacity: pressed ? 0.85 : 1 }]}>
-              <ThemedText type="small" style={{ color: theme.textSecondary, fontWeight: "700" }}>إلغاء</ThemedText>
+            <Pressable
+              onPress={onDismissError}
+              style={({ pressed }) => [
+                styles.notDrugBtnOutline,
+                { borderColor: subtleBorder, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <ThemedText
+                type="small"
+                style={{ color: theme.textSecondary, fontWeight: "700" }}
+              >
+                إلغاء
+              </ThemedText>
             </Pressable>
           </View>
         </Animated.View>
       )}
 
       {/* ── Search bar — يدخل من فوق ──────────────────────────────────── */}
-      <Animated.View entering={FadeInDown.duration(500).delay(50).springify().damping(16)}>
-        <View style={[styles.newSearchBar, { backgroundColor: isDark ? "#161C26" : "#F0F4F8", borderColor: subtleBorder }]}>
-          <Pressable onPress={onSearch} style={[styles.newSearchBtn, { backgroundColor: theme.primaryDark }]}>
+      <Animated.View
+        entering={FadeInDown.duration(500).delay(50).springify().damping(16)}
+      >
+        <View
+          style={[
+            styles.newSearchBar,
+            {
+              backgroundColor: isDark ? "#161C26" : "#F0F4F8",
+              borderColor: subtleBorder,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={onSearch}
+            style={[
+              styles.newSearchBtn,
+              { backgroundColor: theme.primaryDark },
+            ]}
+          >
             <Feather name="search" size={26} color="#fff" />
           </Pressable>
           <TextInput
@@ -739,9 +1170,16 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
             editable={!isRecognizing}
           />
           {/* أيقونة scan نابضة */}
-          <Pressable onPress={() => setShowScanModal(true)} style={styles.scanIconBtn}>
+          <Pressable
+            onPress={() => setShowScanModal(true)}
+            style={styles.scanIconBtn}
+          >
             <Animated.View style={scanPulseStyle}>
-              <MaterialCommunityIcons name="line-scan" size={26} color={theme.primaryDark} />
+              <MaterialCommunityIcons
+                name="line-scan"
+                size={26}
+                color={theme.primaryDark}
+              />
             </Animated.View>
           </Pressable>
         </View>
@@ -749,107 +1187,393 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
 
       {/* ── Recognizing indicator ─────────────────────────────────────── */}
       {isRecognizing && (
-        <Animated.View entering={FadeIn.duration(300)} style={[styles.recognizingCard, { backgroundColor: addAlpha(theme.primaryDark, 0.08) }]}>
-          <MaterialCommunityIcons name="brain" size={24} color={theme.primaryDark} />
-          <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", marginRight: 10 }}>
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={[
+            styles.recognizingCard,
+            { backgroundColor: addAlpha(theme.primaryDark, 0.08) },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="brain"
+            size={24}
+            color={theme.primaryDark}
+          />
+          <ThemedText
+            type="small"
+            style={{
+              color: theme.primaryDark,
+              fontWeight: "700",
+              marginRight: 10,
+            }}
+          >
             الذكاء الاصطناعي يتعرّف على الدواء...
           </ThemedText>
         </Animated.View>
       )}
 
       {/* ── Map — يظهر مع fade بعد شريط البحث ───────────────────────── */}
-      <Animated.View entering={FadeIn.duration(700).delay(200)} style={[styles.nearbyMapContainer, { borderColor: subtleBorder }]}>
-        <MapView
-          style={StyleSheet.absoluteFillObject}
-          provider={PROVIDER_GOOGLE}
-          region={mapRegion}
-          customMapStyle={isDark ? darkMapStyle : []}
-          showsUserLocation
-          showsMyLocationButton={false}
-        >
-          {nearbyPharmacies.map((ph) => (
-            <Marker key={ph.id} coordinate={{ latitude: ph.latitude, longitude: ph.longitude }}>
-              <PulseMarker theme={theme} />
-              <View style={[styles.ratingBubble, { backgroundColor: isDark ? "#1A2233" : "#fff" }]}>
-                <ThemedText style={{ fontSize: 15, fontWeight: "700", color: theme.warning }}>★ {ph.rating.toFixed(1)}</ThemedText>
-              </View>
-            </Marker>
-          ))}
-        </MapView>
-      </Animated.View>
-
-      {/* ── Nearby section — يصعد من تحت ─────────────────────────────── */}
-      <Animated.View entering={FadeInUp.duration(500).delay(350)} style={[styles.nearbySection, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <Pressable>
-            <ThemedText style={{ fontSize: 15, color: theme.primaryDark, fontWeight: "700" }}>عرض الكل ›</ThemedText>
-          </Pressable>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <ThemedText style={{ fontSize: 22, fontWeight: "800", color: theme.text }}>الأقرب إليّ</ThemedText>
-            <MaterialCommunityIcons name="map-marker" size={20} color={theme.primaryDark} />
-          </View>
-        </View>
-
-        {nearbyPharmacies.length === 0 ? (
-          /* Skeleton cards */
-          [0, 1].map((i) => (
-            <Animated.View
-              key={i}
-              entering={FadeInUp.duration(400).delay(400 + i * 100)}
-              style={[styles.pharmacyCard, { backgroundColor: isDark ? "#161C26" : "#F7FAFC", borderColor: subtleBorder, marginBottom: 12 }]}
-            >
-              <View style={{ flex: 1, gap: 8 }}>
-                <View style={{ height: 20, width: "60%", backgroundColor: addAlpha(theme.textSecondary, 0.15), borderRadius: 8 }} />
-                <View style={{ height: 14, width: "80%", backgroundColor: addAlpha(theme.textSecondary, 0.1), borderRadius: 6 }} />
-                <View style={{ height: 14, width: "40%", backgroundColor: addAlpha(theme.textSecondary, 0.1), borderRadius: 6 }} />
-              </View>
-              <View style={{ width: 92, height: 92, borderRadius: 20, backgroundColor: addAlpha(theme.textSecondary, 0.1) }} />
-            </Animated.View>
-          ))
+      <Animated.View
+        entering={FadeIn.duration(700).delay(200)}
+        style={[styles.nearbyMapContainer, { borderColor: subtleBorder }]}
+      >
+        {isNative && MapView ? (
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            provider={PROVIDER_GOOGLE}
+            region={mapRegion}
+            customMapStyle={isDark ? darkMapStyle : []}
+            showsUserLocation
+            showsMyLocationButton={false}
+          >
+            {nearbyPharmacies.map((ph) => (
+              <Marker
+                key={ph.id}
+                coordinate={{ latitude: ph.latitude, longitude: ph.longitude }}
+              >
+                <PulseMarker theme={theme} />
+                <View
+                  style={[
+                    styles.ratingBubble,
+                    { backgroundColor: isDark ? "#1A2233" : "#fff" },
+                  ]}
+                >
+                  <ThemedText
+                    style={{
+                      fontSize: 15,
+                      fontWeight: "700",
+                      color: theme.warning,
+                    }}
+                  >
+                    ★ {ph.rating.toFixed(1)}
+                  </ThemedText>
+                </View>
+              </Marker>
+            ))}
+          </MapView>
         ) : (
-          nearbyPharmacies.slice(0, 3).map((ph, i) => (
-            <PharmacyCard
-              key={ph.id}
-              ph={ph}
-              index={i}
-              theme={theme}
-              cardBg={cardBg}
-              subtleBorder={subtleBorder}
-              isDark={isDark}
+          /* Web fallback */
+          <View
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: isDark ? "#1A2233" : "#D4E8D4",
+                alignItems: "center",
+                justifyContent: "center",
+              },
+            ]}
+          >
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                opacity: 0.12,
+              }}
+            >
+              {[60, 120, 180, 240].map((y) => (
+                <View
+                  key={y}
+                  style={{
+                    position: "absolute",
+                    top: y,
+                    left: 0,
+                    right: 0,
+                    height: 1,
+                    backgroundColor: isDark ? "#4A90D9" : "#1A5C1A",
+                  }}
+                />
+              ))}
+              {[80, 160, 240, 320].map((x) => (
+                <View
+                  key={x}
+                  style={{
+                    position: "absolute",
+                    left: x,
+                    top: 0,
+                    bottom: 0,
+                    width: 1,
+                    backgroundColor: isDark ? "#4A90D9" : "#1A5C1A",
+                  }}
+                />
+              ))}
+            </View>
+            <View
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 9,
+                backgroundColor: "#2563eb",
+                borderWidth: 3,
+                borderColor: "#fff",
+              }}
             />
-          ))
+            {[
+              { top: 80, left: 100 },
+              { top: 150, right: 80 },
+              { bottom: 90, left: 70 },
+              { bottom: 70, right: 110 },
+            ].map((pos, i) => (
+              <View
+                key={i}
+                style={[
+                  { position: "absolute" },
+                  pos,
+                  { alignItems: "center" },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.mapMarker,
+                    { width: 44, height: 44, borderRadius: 22 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="plus" size={20} color="#fff" />
+                </View>
+                <View
+                  style={[
+                    styles.ratingBubble,
+                    { backgroundColor: isDark ? "#1A2233" : "#fff" },
+                  ]}
+                >
+                  <ThemedText
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "700",
+                      color: theme.warning,
+                    }}
+                  >
+                    ★ {(4.5 + i * 0.1).toFixed(1)}
+                  </ThemedText>
+                </View>
+              </View>
+            ))}
+            <ThemedText
+              style={{
+                position: "absolute",
+                bottom: 10,
+                fontSize: 12,
+                color: isDark ? "#4A6080" : "#3A6A3A",
+                fontWeight: "600",
+              }}
+            >
+              الخريطة الكاملة متاحة على التطبيق
+            </ThemedText>
+          </View>
         )}
       </Animated.View>
 
+      {/* ── Nearby section — يصعد من تحت ─────────────────────────────── */}
+      <Animated.View
+        entering={FadeInUp.duration(500).delay(350)}
+        style={[
+          styles.nearbySection,
+          { backgroundColor: cardBg, borderColor: subtleBorder },
+        ]}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+          }}
+        >
+          <Pressable>
+            <ThemedText
+              style={{
+                fontSize: 15,
+                color: theme.primaryDark,
+                fontWeight: "700",
+              }}
+            >
+              عرض الكل ›
+            </ThemedText>
+          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <ThemedText
+              style={{ fontSize: 22, fontWeight: "800", color: theme.text }}
+            >
+              الأقرب إليّ
+            </ThemedText>
+            <MaterialCommunityIcons
+              name="map-marker"
+              size={20}
+              color={theme.primaryDark}
+            />
+          </View>
+        </View>
+
+        {nearbyPharmacies.length === 0
+          ? /* Skeleton cards */
+            [0, 1].map((i) => (
+              <Animated.View
+                key={i}
+                entering={FadeInUp.duration(400).delay(400 + i * 100)}
+                style={[
+                  styles.pharmacyCard,
+                  {
+                    backgroundColor: isDark ? "#161C26" : "#F7FAFC",
+                    borderColor: subtleBorder,
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1, gap: 8 }}>
+                  <View
+                    style={{
+                      height: 20,
+                      width: "60%",
+                      backgroundColor: addAlpha(theme.textSecondary, 0.15),
+                      borderRadius: 8,
+                    }}
+                  />
+                  <View
+                    style={{
+                      height: 14,
+                      width: "80%",
+                      backgroundColor: addAlpha(theme.textSecondary, 0.1),
+                      borderRadius: 6,
+                    }}
+                  />
+                  <View
+                    style={{
+                      height: 14,
+                      width: "40%",
+                      backgroundColor: addAlpha(theme.textSecondary, 0.1),
+                      borderRadius: 6,
+                    }}
+                  />
+                </View>
+                <View
+                  style={{
+                    width: 92,
+                    height: 92,
+                    borderRadius: 20,
+                    backgroundColor: addAlpha(theme.textSecondary, 0.1),
+                  }}
+                />
+              </Animated.View>
+            ))
+          : nearbyPharmacies
+              .slice(0, 3)
+              .map((ph, i) => (
+                <PharmacyCard
+                  key={ph.id}
+                  ph={ph}
+                  index={i}
+                  theme={theme}
+                  cardBg={cardBg}
+                  subtleBorder={subtleBorder}
+                />
+              ))}
+      </Animated.View>
+
       {/* ── Scan options modal ────────────────────────────────────────────── */}
-      <Modal visible={showScanModal} transparent animationType="none" onRequestClose={() => setShowScanModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowScanModal(false)}>
-          <Animated.View entering={SlideInDown.duration(380).springify().damping(18)} style={[styles.scanSheet, { backgroundColor: cardBg }]}>
+      <Modal
+        visible={showScanModal}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowScanModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowScanModal(false)}
+        >
+          <Animated.View
+            entering={SlideInDown.duration(380).springify().damping(18)}
+            style={[styles.scanSheet, { backgroundColor: cardBg }]}
+          >
             <View style={styles.scanSheetHandle} />
-            <ThemedText style={{ fontSize: 24, fontWeight: "800", color: theme.text, textAlign: "center", marginBottom: 20 }}>
+            <ThemedText
+              style={{
+                fontSize: 24,
+                fontWeight: "800",
+                color: theme.text,
+                textAlign: "center",
+                marginBottom: 20,
+              }}
+            >
               التعرف على الدواء بالصورة
             </ThemedText>
-            <ThemedText style={{ fontSize: 15, color: theme.textSecondary, textAlign: "center", marginBottom: 24, lineHeight: 22 }}>
+            <ThemedText
+              style={{
+                fontSize: 15,
+                color: theme.textSecondary,
+                textAlign: "center",
+                marginBottom: 24,
+                lineHeight: 22,
+              }}
+            >
               صوّر علبة الدواء وسيتعرّف عليها الذكاء الاصطناعي تلقائياً
             </ThemedText>
             <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
               <Pressable
-                onPress={() => { setShowScanModal(false); setTimeout(onCamera, 300); }}
-                style={({ pressed }) => [styles.scanOptionBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1), opacity: pressed ? 0.8 : 1 }]}
+                onPress={() => {
+                  setShowScanModal(false);
+                  setTimeout(onCamera, 300);
+                }}
+                style={({ pressed }) => [
+                  styles.scanOptionBtn,
+                  {
+                    backgroundColor: addAlpha(theme.primaryDark, 0.1),
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
               >
                 <Feather name="camera" size={34} color={theme.primaryDark} />
-                <ThemedText style={{ fontSize: 17, fontWeight: "700", color: theme.primaryDark, marginTop: 8 }}>الكاميرا</ThemedText>
+                <ThemedText
+                  style={{
+                    fontSize: 17,
+                    fontWeight: "700",
+                    color: theme.primaryDark,
+                    marginTop: 8,
+                  }}
+                >
+                  الكاميرا
+                </ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => { setShowScanModal(false); setTimeout(onGallery, 300); }}
-                style={({ pressed }) => [styles.scanOptionBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1), opacity: pressed ? 0.8 : 1 }]}
+                onPress={() => {
+                  setShowScanModal(false);
+                  setTimeout(onGallery, 300);
+                }}
+                style={({ pressed }) => [
+                  styles.scanOptionBtn,
+                  {
+                    backgroundColor: addAlpha(theme.primaryDark, 0.1),
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
               >
                 <Feather name="image" size={34} color={theme.primaryDark} />
-                <ThemedText style={{ fontSize: 17, fontWeight: "700", color: theme.primaryDark, marginTop: 8 }}>المعرض</ThemedText>
+                <ThemedText
+                  style={{
+                    fontSize: 17,
+                    fontWeight: "700",
+                    color: theme.primaryDark,
+                    marginTop: 8,
+                  }}
+                >
+                  المعرض
+                </ThemedText>
               </Pressable>
             </View>
-            <Pressable onPress={() => setShowScanModal(false)} style={[styles.scanCancelBtn, { borderColor: subtleBorder }]}>
-              <ThemedText style={{ fontSize: 16, fontWeight: "700", color: theme.textSecondary }}>إلغاء</ThemedText>
+            <Pressable
+              onPress={() => setShowScanModal(false)}
+              style={[styles.scanCancelBtn, { borderColor: subtleBorder }]}
+            >
+              <ThemedText
+                style={{
+                  fontSize: 16,
+                  fontWeight: "700",
+                  color: theme.textSecondary,
+                }}
+              >
+                إلغاء
+              </ThemedText>
             </Pressable>
           </Animated.View>
         </Pressable>
@@ -860,49 +1584,137 @@ function StepInput({ query, onQueryChange, isRecognizing, onSearch, onCamera, on
 
 // ── Step: confirm ─────────────────────────────────────────────────────────────
 
-function StepConfirm({ drug, onConfirm, onChange, theme, cardBg, subtleBorder, insets }: BaseProps & {
+function StepConfirm({
+  drug,
+  onConfirm,
+  onChange,
+  theme,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   drug: DrugInfo;
   onConfirm: () => void;
   onChange: () => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 24 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 24,
+      }}
+    >
       <Animated.View entering={FadeInUp.duration(400)}>
-        <View style={[styles.drugCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
+        <View
+          style={[
+            styles.drugCard,
+            { backgroundColor: cardBg, borderColor: subtleBorder },
+          ]}
+        >
           <View style={styles.drugCardHeader}>
             {drug.imageUri ? (
-              <Image source={{ uri: drug.imageUri }} style={styles.drugImage} resizeMode="cover" />
+              <Image
+                source={{ uri: drug.imageUri }}
+                style={styles.drugImage}
+                resizeMode="cover"
+              />
             ) : (
-              <View style={[styles.drugIconWrap, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
-                <MaterialCommunityIcons name="pill" size={40} color={theme.primaryDark} />
+              <View
+                style={[
+                  styles.drugIconWrap,
+                  { backgroundColor: addAlpha(theme.primaryDark, 0.1) },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="pill"
+                  size={40}
+                  color={theme.primaryDark}
+                />
               </View>
             )}
             <View style={{ flex: 1, marginRight: Spacing.md }}>
-              <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", textAlign: "right" }}>{drug.name}</ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>{drug.manufacturer}</ThemedText>
+              <ThemedText
+                type="h3"
+                style={{
+                  color: theme.text,
+                  fontWeight: "800",
+                  textAlign: "right",
+                }}
+              >
+                {drug.name}
+              </ThemedText>
+              <ThemedText
+                type="caption"
+                style={{ color: theme.textSecondary, textAlign: "right" }}
+              >
+                {drug.manufacturer}
+              </ThemedText>
             </View>
           </View>
           {[
-            { label: "المادة الفعّالة",     value: drug.activeIngredient },
-            { label: "الاستخدام",           value: drug.usage },
-            { label: "الجرعة الموصى بها",  value: drug.dosage },
+            { label: "المادة الفعّالة", value: drug.activeIngredient },
+            { label: "الاستخدام", value: drug.usage },
+            { label: "الجرعة الموصى بها", value: drug.dosage },
           ].map((row) => (
-            <View key={row.label} style={[styles.infoRow, { borderTopColor: subtleBorder }]}>
-              <ThemedText type="small"   style={{ color: theme.text,          flex: 1,     textAlign: "right" }}>{row.value}</ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary, marginLeft: Spacing.md, minWidth: 80, textAlign: "left" }}>{row.label}</ThemedText>
+            <View
+              key={row.label}
+              style={[styles.infoRow, { borderTopColor: subtleBorder }]}
+            >
+              <ThemedText
+                type="small"
+                style={{ color: theme.text, flex: 1, textAlign: "right" }}
+              >
+                {row.value}
+              </ThemedText>
+              <ThemedText
+                type="caption"
+                style={{
+                  color: theme.textSecondary,
+                  marginLeft: Spacing.md,
+                  minWidth: 80,
+                  textAlign: "left",
+                }}
+              >
+                {row.label}
+              </ThemedText>
             </View>
           ))}
         </View>
 
         <View style={styles.confirmBtns}>
-          <Pressable onPress={onChange} style={[styles.changeBtn, { borderColor: subtleBorder }]}>
+          <Pressable
+            onPress={onChange}
+            style={[styles.changeBtn, { borderColor: subtleBorder }]}
+          >
             <Feather name="edit-2" size={16} color={theme.textSecondary} />
-            <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700", marginRight: 6 }}>تغيير</ThemedText>
+            <ThemedText
+              type="body"
+              style={{
+                color: theme.textSecondary,
+                fontWeight: "700",
+                marginRight: 6,
+              }}
+            >
+              تغيير
+            </ThemedText>
           </Pressable>
-          <Pressable onPress={onConfirm} style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}>
-            <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.confirmGrad}>
+          <Pressable
+            onPress={onConfirm}
+            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}
+          >
+            <LinearGradient
+              colors={[theme.primary, theme.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.confirmGrad}
+            >
               <Feather name="check" size={18} color="#fff" />
-              <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>هذا هو الدواء ✅</ThemedText>
+              <ThemedText
+                type="body"
+                style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}
+              >
+                هذا هو الدواء ✅
+              </ThemedText>
             </LinearGradient>
           </Pressable>
         </View>
@@ -913,7 +1725,21 @@ function StepConfirm({ drug, onConfirm, onChange, theme, cardBg, subtleBorder, i
 
 // ── Step: searching (map) ─────────────────────────────────────────────────────
 
-function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, onStartSearch, onPharmacyFound, onCancel, userLocation, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepSearching({
+  drug,
+  searchRadius,
+  onRadiusChange,
+  isSearchingActive,
+  onStartSearch,
+  onPharmacyFound,
+  onCancel,
+  userLocation,
+  theme,
+  isDark,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   drug: DrugInfo;
   searchRadius: number;
   onRadiusChange: (v: number) => void;
@@ -924,21 +1750,62 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
   userLocation: { latitude: number; longitude: number } | null;
 }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 24 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 24,
+      }}
+    >
       <Animated.View entering={FadeIn.duration(300)}>
-        <View style={[styles.compactDrugRow, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
-          <View style={[styles.compactDrugIcon, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
-            <MaterialCommunityIcons name="pill" size={20} color={theme.primaryDark} />
+        <View
+          style={[
+            styles.compactDrugRow,
+            { backgroundColor: cardBg, borderColor: subtleBorder },
+          ]}
+        >
+          <View
+            style={[
+              styles.compactDrugIcon,
+              { backgroundColor: addAlpha(theme.primaryDark, 0.1) },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="pill"
+              size={20}
+              color={theme.primaryDark}
+            />
           </View>
           <View style={{ flex: 1, marginRight: Spacing.sm }}>
-            <ThemedText type="small"   style={{ color: theme.text,          fontWeight: "800", textAlign: "right" }}>{drug.name}</ThemedText>
-            <ThemedText type="caption" style={{ color: theme.textSecondary,                    textAlign: "right" }}>{drug.activeIngredient}</ThemedText>
+            <ThemedText
+              type="small"
+              style={{
+                color: theme.text,
+                fontWeight: "800",
+                textAlign: "right",
+              }}
+            >
+              {drug.name}
+            </ThemedText>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary, textAlign: "right" }}
+            >
+              {drug.activeIngredient}
+            </ThemedText>
           </View>
         </View>
 
         {!isSearchingActive && (
           <Animated.View entering={FadeInUp.duration(350)}>
-            <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "right", marginBottom: Spacing.sm, marginTop: Spacing.md }}>
+            <ThemedText
+              type="small"
+              style={{
+                color: theme.textSecondary,
+                textAlign: "right",
+                marginBottom: Spacing.sm,
+                marginTop: Spacing.md,
+              }}
+            >
               نطاق البحث
             </ThemedText>
             <View style={styles.radiusRow}>
@@ -946,9 +1813,28 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
                 <Pressable
                   key={opt.value}
                   onPress={() => onRadiusChange(opt.value)}
-                  style={[styles.radiusBtn, { backgroundColor: searchRadius === opt.value ? theme.primaryDark : cardBg, borderColor: searchRadius === opt.value ? theme.primaryDark : subtleBorder }]}
+                  style={[
+                    styles.radiusBtn,
+                    {
+                      backgroundColor:
+                        searchRadius === opt.value ? theme.primaryDark : cardBg,
+                      borderColor:
+                        searchRadius === opt.value
+                          ? theme.primaryDark
+                          : subtleBorder,
+                    },
+                  ]}
                 >
-                  <ThemedText type="caption" style={{ color: searchRadius === opt.value ? "#fff" : theme.textSecondary, fontWeight: "700" }}>
+                  <ThemedText
+                    type="caption"
+                    style={{
+                      color:
+                        searchRadius === opt.value
+                          ? "#fff"
+                          : theme.textSecondary,
+                      fontWeight: "700",
+                    }}
+                  >
                     {opt.label}
                   </ThemedText>
                 </Pressable>
@@ -970,19 +1856,49 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
 
         <View style={styles.searchActions}>
           {!isSearchingActive ? (
-            <Pressable onPress={onStartSearch} style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}>
-              <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
+            <Pressable
+              onPress={onStartSearch}
+              style={({ pressed }) => [
+                { opacity: pressed ? 0.88 : 1, flex: 1 },
+              ]}
+            >
+              <LinearGradient
+                colors={[theme.primary, theme.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.actionGrad}
+              >
                 <MaterialCommunityIcons name="magnify" size={20} color="#fff" />
-                <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>ابدأ البحث</ThemedText>
+                <ThemedText
+                  type="body"
+                  style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}
+                >
+                  ابدأ البحث
+                </ThemedText>
               </LinearGradient>
             </Pressable>
           ) : (
             <>
-              <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center", flex: 1 }}>
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.textSecondary,
+                  textAlign: "center",
+                  flex: 1,
+                }}
+              >
                 يتم إشعار الصيدليات... الأسرع بالرد يأخذ طلبك
               </ThemedText>
-              <Pressable onPress={onCancel} style={[styles.cancelSmallBtn, { borderColor: theme.error }]}>
-                <ThemedText type="caption" style={{ color: theme.error, fontWeight: "700" }}>إلغاء</ThemedText>
+              <Pressable
+                onPress={onCancel}
+                style={[styles.cancelSmallBtn, { borderColor: theme.error }]}
+              >
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.error, fontWeight: "700" }}
+                >
+                  إلغاء
+                </ThemedText>
               </Pressable>
             </>
           )}
@@ -994,7 +1910,22 @@ function StepSearching({ drug, searchRadius, onRadiusChange, isSearchingActive, 
 
 // ── Step: delivery ────────────────────────────────────────────────────────────
 
-function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExtend, onConfirmReceipt, onCancel, userLocation, routeCoords, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepDelivery({
+  pharmacy,
+  drug,
+  deliveryMinutes,
+  extensionCount,
+  onExtend,
+  onConfirmReceipt,
+  onCancel,
+  userLocation,
+  routeCoords,
+  theme,
+  isDark,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   pharmacy: FoundPharmacy;
   drug: DrugInfo;
   deliveryMinutes: number;
@@ -1006,15 +1937,42 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
   routeCoords: { latitude: number; longitude: number }[] | null;
 }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 32,
+      }}
+    >
       <Animated.View entering={FadeInUp.duration(400)}>
-        <View style={[styles.deliveryCard, { backgroundColor: addAlpha(theme.success, 0.08), borderColor: addAlpha(theme.success, 0.3) }]}>
-          <MaterialCommunityIcons name="check-circle" size={32} color={theme.success} />
+        <View
+          style={[
+            styles.deliveryCard,
+            {
+              backgroundColor: addAlpha(theme.success, 0.08),
+              borderColor: addAlpha(theme.success, 0.3),
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="check-circle"
+            size={32}
+            color={theme.success}
+          />
           <View style={{ flex: 1, marginRight: Spacing.md }}>
-            <ThemedText type="body" style={{ color: theme.success, fontWeight: "800", textAlign: "right" }}>
+            <ThemedText
+              type="body"
+              style={{
+                color: theme.success,
+                fontWeight: "800",
+                textAlign: "right",
+              }}
+            >
               قبلت الطلب!
             </ThemedText>
-            <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary, textAlign: "right" }}
+            >
               {pharmacy.name} · {(pharmacy.distanceM / 1000).toFixed(2)} كم
             </ThemedText>
           </View>
@@ -1031,24 +1989,67 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
           routeCoords={routeCoords}
         />
 
-        <View style={[styles.timerCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
+        <View
+          style={[
+            styles.timerCard,
+            { backgroundColor: cardBg, borderColor: subtleBorder },
+          ]}
+        >
           <Feather name="clock" size={20} color={theme.primaryDark} />
           <View style={{ flex: 1, marginRight: Spacing.sm }}>
-            <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>وقت الوصول المتوقع</ThemedText>
-            <ThemedText type="h3"     style={{ color: theme.primaryDark, fontWeight: "800", textAlign: "right" }}>{deliveryMinutes} دقيقة</ThemedText>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary, textAlign: "right" }}
+            >
+              وقت الوصول المتوقع
+            </ThemedText>
+            <ThemedText
+              type="h3"
+              style={{
+                color: theme.primaryDark,
+                fontWeight: "800",
+                textAlign: "right",
+              }}
+            >
+              {deliveryMinutes} دقيقة
+            </ThemedText>
           </View>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>+10 دقائق احتياطي</ThemedText>
+          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+            +10 دقائق احتياطي
+          </ThemedText>
         </View>
 
         {extensionCount < 2 && (
           <View style={styles.extendRow}>
-            <ThemedText type="caption" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, textAlign: "right" }}>
+            <ThemedText
+              type="caption"
+              style={{
+                color: theme.textSecondary,
+                marginBottom: Spacing.sm,
+                textAlign: "right",
+              }}
+            >
               تمديد الوقت ({2 - extensionCount} مرة متبقية)
             </ThemedText>
             <View style={styles.extendBtns}>
               {[10, 15, 20].map((m) => (
-                <Pressable key={m} onPress={() => onExtend(m)} style={[styles.extendBtn, { borderColor: theme.primaryDark, backgroundColor: addAlpha(theme.primaryDark, 0.07) }]}>
-                  <ThemedText type="caption" style={{ color: theme.primaryDark, fontWeight: "700" }}>+{m} د</ThemedText>
+                <Pressable
+                  key={m}
+                  onPress={() => onExtend(m)}
+                  style={[
+                    styles.extendBtn,
+                    {
+                      borderColor: theme.primaryDark,
+                      backgroundColor: addAlpha(theme.primaryDark, 0.07),
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.primaryDark, fontWeight: "700" }}
+                  >
+                    +{m} د
+                  </ThemedText>
                 </Pressable>
               ))}
             </View>
@@ -1056,13 +2057,34 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
         )}
 
         <View style={styles.deliveryActions}>
-          <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: theme.error }]}>
-            <ThemedText type="body" style={{ color: theme.error, fontWeight: "700" }}>إلغاء الطلب</ThemedText>
+          <Pressable
+            onPress={onCancel}
+            style={[styles.cancelBtn, { borderColor: theme.error }]}
+          >
+            <ThemedText
+              type="body"
+              style={{ color: theme.error, fontWeight: "700" }}
+            >
+              إلغاء الطلب
+            </ThemedText>
           </Pressable>
-          <Pressable onPress={onConfirmReceipt} style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}>
-            <LinearGradient colors={[theme.success, "#2DB54B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
+          <Pressable
+            onPress={onConfirmReceipt}
+            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}
+          >
+            <LinearGradient
+              colors={[theme.success, "#2DB54B"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.actionGrad}
+            >
               <Feather name="check" size={18} color="#fff" />
-              <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>استلمت الدواء</ThemedText>
+              <ThemedText
+                type="body"
+                style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}
+              >
+                استلمت الدواء
+              </ThemedText>
             </LinearGradient>
           </Pressable>
         </View>
@@ -1073,36 +2095,97 @@ function StepDelivery({ pharmacy, drug, deliveryMinutes, extensionCount, onExten
 
 // ── Step: rate ────────────────────────────────────────────────────────────────
 
-function StepRate({ pharmacy, rating, onRate, onSubmit, theme, cardBg, subtleBorder, insets }: BaseProps & {
+function StepRate({
+  pharmacy,
+  rating,
+  onRate,
+  onSubmit,
+  theme,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   pharmacy: FoundPharmacy;
   rating: number;
   onRate: (v: number) => void;
   onSubmit: () => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32 }}>
-      <Animated.View entering={ZoomIn.duration(400)} style={{ alignItems: "center" }}>
-        <View style={[styles.rateIcon, { backgroundColor: addAlpha(theme.warning, 0.1) }]}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 32,
+      }}
+    >
+      <Animated.View
+        entering={ZoomIn.duration(400)}
+        style={{ alignItems: "center" }}
+      >
+        <View
+          style={[
+            styles.rateIcon,
+            { backgroundColor: addAlpha(theme.warning, 0.1) },
+          ]}
+        >
           <MaterialCommunityIcons name="star" size={40} color={theme.warning} />
         </View>
-        <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", marginTop: Spacing.md, textAlign: "center" }}>
+        <ThemedText
+          type="h3"
+          style={{
+            color: theme.text,
+            fontWeight: "800",
+            marginTop: Spacing.md,
+            textAlign: "center",
+          }}
+        >
           قيّم {pharmacy.name}
         </ThemedText>
-        <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: 4, textAlign: "center" }}>
+        <ThemedText
+          type="body"
+          style={{
+            color: theme.textSecondary,
+            marginTop: 4,
+            textAlign: "center",
+          }}
+        >
           تقييمك يساعد المرضى الآخرين
         </ThemedText>
 
         <View style={styles.starsRow}>
           {[1, 2, 3, 4, 5].map((star) => (
             <Pressable key={star} onPress={() => onRate(star)}>
-              <Feather name="star" size={40} color={star <= rating ? theme.warning : addAlpha(theme.textSecondary, 0.3)} style={{ margin: 4 }} />
+              <Feather
+                name="star"
+                size={40}
+                color={
+                  star <= rating
+                    ? theme.warning
+                    : addAlpha(theme.textSecondary, 0.3)
+                }
+                style={{ margin: 4 }}
+              />
             </Pressable>
           ))}
         </View>
 
-        <Pressable onPress={onSubmit} disabled={rating === 0} style={({ pressed }) => [styles.submitBtn, { opacity: rating === 0 ? 0.45 : pressed ? 0.88 : 1 }]}>
-          <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
-            <ThemedText type="body" style={{ color: "#fff", fontWeight: "800" }}>
+        <Pressable
+          onPress={onSubmit}
+          disabled={rating === 0}
+          style={({ pressed }) => [
+            styles.submitBtn,
+            { opacity: rating === 0 ? 0.45 : pressed ? 0.88 : 1 },
+          ]}
+        >
+          <LinearGradient
+            colors={[theme.primary, theme.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.actionGrad}
+          >
+            <ThemedText
+              type="body"
+              style={{ color: "#fff", fontWeight: "800" }}
+            >
               {rating === 0 ? "اختر تقييمك" : "تأكيد التقييم"}
             </ThemedText>
           </LinearGradient>
@@ -1114,7 +2197,13 @@ function StepRate({ pharmacy, rating, onRate, onSubmit, theme, cardBg, subtleBor
 
 // ── Counter helper ────────────────────────────────────────────────────────────
 
-function Counter({ value, onChange, min = 1, max = 99, step = 1 }: {
+function Counter({
+  value,
+  onChange,
+  min = 1,
+  max = 99,
+  step = 1,
+}: {
   value: number;
   onChange: (v: number) => void;
   min?: number;
@@ -1124,13 +2213,33 @@ function Counter({ value, onChange, min = 1, max = 99, step = 1 }: {
   const { theme } = useTheme();
   return (
     <View style={styles.counterRow}>
-      <Pressable onPress={() => onChange(Math.max(min, value - step))} style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
+      <Pressable
+        onPress={() => onChange(Math.max(min, value - step))}
+        style={[
+          styles.counterBtn,
+          { backgroundColor: addAlpha(theme.primaryDark, 0.1) },
+        ]}
+      >
         <Feather name="minus" size={16} color={theme.primaryDark} />
       </Pressable>
-      <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", minWidth: 44, textAlign: "center" }}>
+      <ThemedText
+        type="h3"
+        style={{
+          color: theme.text,
+          fontWeight: "800",
+          minWidth: 44,
+          textAlign: "center",
+        }}
+      >
         {value}
       </ThemedText>
-      <Pressable onPress={() => onChange(Math.min(max, value + step))} style={[styles.counterBtn, { backgroundColor: addAlpha(theme.primaryDark, 0.1) }]}>
+      <Pressable
+        onPress={() => onChange(Math.min(max, value + step))}
+        style={[
+          styles.counterBtn,
+          { backgroundColor: addAlpha(theme.primaryDark, 0.1) },
+        ]}
+      >
         <Feather name="plus" size={16} color={theme.primaryDark} />
       </Pressable>
     </View>
@@ -1139,7 +2248,25 @@ function Counter({ value, onChange, min = 1, max = 99, step = 1 }: {
 
 // ── Step: doses ────────────────────────────────────────────────────────────────
 
-function StepDoses({ drug, dailyDoses, pillsPerDose, pillsInBox, isChronic, daysSupply, endDate, onDailyDoses, onPillsPerDose, onPillsInBox, onChronic, onSave, theme, isDark, cardBg, subtleBorder, insets }: BaseProps & {
+function StepDoses({
+  drug,
+  dailyDoses,
+  pillsPerDose,
+  pillsInBox,
+  isChronic,
+  daysSupply,
+  endDate,
+  onDailyDoses,
+  onPillsPerDose,
+  onPillsInBox,
+  onChronic,
+  onSave,
+  theme,
+  isDark,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   drug: DrugInfo;
   dailyDoses: number;
   pillsPerDose: number;
@@ -1154,36 +2281,125 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, pillsInBox, isChronic, days
   onSave: () => void;
 }) {
   const rows = [
-    { label: "كم مرة يومياً؟",    value: dailyDoses,   onChange: onDailyDoses,   min: 1, max: 10, step: 1 },
-    { label: "كم قرص في المرة؟",  value: pillsPerDose, onChange: onPillsPerDose, min: 1, max: 10, step: 1 },
-    { label: "كم قرص في العلبة؟", value: pillsInBox,   onChange: onPillsInBox,   min: 5, max: 200, step: 5 },
+    {
+      label: "كم مرة يومياً؟",
+      value: dailyDoses,
+      onChange: onDailyDoses,
+      min: 1,
+      max: 10,
+      step: 1,
+    },
+    {
+      label: "كم قرص في المرة؟",
+      value: pillsPerDose,
+      onChange: onPillsPerDose,
+      min: 1,
+      max: 10,
+      step: 1,
+    },
+    {
+      label: "كم قرص في العلبة؟",
+      value: pillsInBox,
+      onChange: onPillsInBox,
+      min: 5,
+      max: 200,
+      step: 5,
+    },
   ];
 
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32 }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 32,
+      }}
+    >
       <Animated.View entering={FadeInUp.duration(400)}>
-        <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "right", marginBottom: Spacing.md }}>
+        <ThemedText
+          type="body"
+          style={{
+            color: theme.textSecondary,
+            textAlign: "right",
+            marginBottom: Spacing.md,
+          }}
+        >
           أخبرنا عن جرعتك حتى نذكّرك قبل نفاد الدواء
         </ThemedText>
 
-        <View style={[styles.doseCard, { backgroundColor: cardBg, borderColor: subtleBorder }]}>
+        <View
+          style={[
+            styles.doseCard,
+            { backgroundColor: cardBg, borderColor: subtleBorder },
+          ]}
+        >
           {rows.map((item, i) => (
-            <View key={item.label} style={[styles.doseRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: subtleBorder }]}>
-              <Counter value={item.value} onChange={item.onChange} min={item.min} max={item.max} step={item.step} />
-              <ThemedText type="body" style={{ color: theme.text, fontWeight: "700", textAlign: "right", flex: 1 }}>
+            <View
+              key={item.label}
+              style={[
+                styles.doseRow,
+                i > 0 && {
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  borderTopColor: subtleBorder,
+                },
+              ]}
+            >
+              <Counter
+                value={item.value}
+                onChange={item.onChange}
+                min={item.min}
+                max={item.max}
+                step={item.step}
+              />
+              <ThemedText
+                type="body"
+                style={{
+                  color: theme.text,
+                  fontWeight: "700",
+                  textAlign: "right",
+                  flex: 1,
+                }}
+              >
                 {item.label}
               </ThemedText>
             </View>
           ))}
 
-          <View style={[styles.doseRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: subtleBorder }]}>
+          <View
+            style={[
+              styles.doseRow,
+              {
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: subtleBorder,
+              },
+            ]}
+          >
             <Pressable
               onPress={() => onChronic(!isChronic)}
-              style={[styles.toggle, { backgroundColor: isChronic ? theme.primaryDark : addAlpha(theme.textSecondary, 0.15) }]}
+              style={[
+                styles.toggle,
+                {
+                  backgroundColor: isChronic
+                    ? theme.primaryDark
+                    : addAlpha(theme.textSecondary, 0.15),
+                },
+              ]}
             >
-              <View style={[styles.toggleThumb, { transform: [{ translateX: isChronic ? 20 : 2 }] }]} />
+              <View
+                style={[
+                  styles.toggleThumb,
+                  { transform: [{ translateX: isChronic ? 20 : 2 }] },
+                ]}
+              />
             </Pressable>
-            <ThemedText type="body" style={{ color: theme.text, fontWeight: "700", textAlign: "right", flex: 1 }}>
+            <ThemedText
+              type="body"
+              style={{
+                color: theme.text,
+                fontWeight: "700",
+                textAlign: "right",
+                flex: 1,
+              }}
+            >
               دواء مزمن (بدون تاريخ انتهاء)
             </ThemedText>
           </View>
@@ -1191,23 +2407,59 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, pillsInBox, isChronic, days
 
         {/* Auto-calculated days supply */}
         {!isChronic && daysSupply != null && (
-          <Animated.View entering={FadeIn.duration(300)} style={[styles.endDateCard, { backgroundColor: addAlpha(theme.primaryDark, 0.07), borderColor: addAlpha(theme.primaryDark, 0.2) }]}>
+          <Animated.View
+            entering={FadeIn.duration(300)}
+            style={[
+              styles.endDateCard,
+              {
+                backgroundColor: addAlpha(theme.primaryDark, 0.07),
+                borderColor: addAlpha(theme.primaryDark, 0.2),
+              },
+            ]}
+          >
             <Feather name="calendar" size={18} color={theme.primaryDark} />
             <View style={{ flex: 1, marginRight: Spacing.sm }}>
-              <ThemedText type="small" style={{ color: theme.primaryDark, fontWeight: "700", textAlign: "right" }}>
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.primaryDark,
+                  fontWeight: "700",
+                  textAlign: "right",
+                }}
+              >
                 ينتهي الدواء في: {endDate}
               </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right" }}>
-                ({daysSupply} يوم · {pillsInBox} قرص ÷ {dailyDoses}×{pillsPerDose}/يوم)
+              <ThemedText
+                type="caption"
+                style={{ color: theme.textSecondary, textAlign: "right" }}
+              >
+                ({daysSupply} يوم · {pillsInBox} قرص ÷ {dailyDoses}×
+                {pillsPerDose}/يوم)
               </ThemedText>
             </View>
           </Animated.View>
         )}
 
-        <Pressable onPress={onSave} style={({ pressed }) => [styles.submitBtn, { opacity: pressed ? 0.88 : 1 }]}>
-          <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
+        <Pressable
+          onPress={onSave}
+          style={({ pressed }) => [
+            styles.submitBtn,
+            { opacity: pressed ? 0.88 : 1 },
+          ]}
+        >
+          <LinearGradient
+            colors={[theme.primary, theme.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.actionGrad}
+          >
             <Feather name="save" size={18} color="#fff" />
-            <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>حفظ وإضافة للجدول</ThemedText>
+            <ThemedText
+              type="body"
+              style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}
+            >
+              حفظ وإضافة للجدول
+            </ThemedText>
           </LinearGradient>
         </Pressable>
       </Animated.View>
@@ -1217,7 +2469,19 @@ function StepDoses({ drug, dailyDoses, pillsPerDose, pillsInBox, isChronic, days
 
 // ── Step: done ────────────────────────────────────────────────────────────────
 
-function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMyMeds, theme, cardBg, subtleBorder, insets }: BaseProps & {
+function StepDone({
+  drug,
+  pharmacy,
+  daysSupply,
+  endDate,
+  isChronic,
+  onHome,
+  onMyMeds,
+  theme,
+  cardBg,
+  subtleBorder,
+  insets,
+}: BaseProps & {
   drug: DrugInfo | null;
   pharmacy: FoundPharmacy | null;
   daysSupply: number | null;
@@ -1227,37 +2491,119 @@ function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMy
   onMyMeds: () => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + 32, alignItems: "center" }}>
-      <Animated.View entering={ZoomIn.duration(500)} style={{ alignItems: "center" }}>
-        <View style={[styles.doneIcon, { backgroundColor: addAlpha(theme.success, 0.12) }]}>
-          <MaterialCommunityIcons name="check-decagram" size={64} color={theme.success} />
+    <ScrollView
+      contentContainerStyle={{
+        padding: Spacing.lg,
+        paddingBottom: insets.bottom + 32,
+        alignItems: "center",
+      }}
+    >
+      <Animated.View
+        entering={ZoomIn.duration(500)}
+        style={{ alignItems: "center" }}
+      >
+        <View
+          style={[
+            styles.doneIcon,
+            { backgroundColor: addAlpha(theme.success, 0.12) },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="check-decagram"
+            size={64}
+            color={theme.success}
+          />
         </View>
-        <ThemedText type="h3" style={{ color: theme.text, fontWeight: "800", marginTop: Spacing.lg, textAlign: "center" }}>
+        <ThemedText
+          type="h3"
+          style={{
+            color: theme.text,
+            fontWeight: "800",
+            marginTop: Spacing.lg,
+            textAlign: "center",
+          }}
+        >
           تم الحفظ بنجاح!
         </ThemedText>
-        <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center", marginTop: 4 }}>
+        <ThemedText
+          type="body"
+          style={{
+            color: theme.textSecondary,
+            textAlign: "center",
+            marginTop: 4,
+          }}
+        >
           {isChronic
             ? "أُضيف دواؤك المزمن إلى قائمتك الدائمة"
             : `ستتلقى تذكيراً قبل يوم من انتهاء الدواء في ${endDate}`}
         </ThemedText>
 
         {drug && (
-          <View style={[styles.doneSummary, { backgroundColor: cardBg, borderColor: subtleBorder, width: "100%" }]}>
-            <SummaryRow label="الدواء"    value={drug.name}        theme={theme} subtleBorder={subtleBorder} />
-            {pharmacy    && <SummaryRow label="الصيدلية" value={pharmacy.name}   theme={theme} subtleBorder={subtleBorder} />}
-            {daysSupply  && !isChronic && <SummaryRow label="الأمداد"  value={`${daysSupply} يوم`} theme={theme} subtleBorder={subtleBorder} />}
+          <View
+            style={[
+              styles.doneSummary,
+              {
+                backgroundColor: cardBg,
+                borderColor: subtleBorder,
+                width: "100%",
+              },
+            ]}
+          >
+            <SummaryRow
+              label="الدواء"
+              value={drug.name}
+              theme={theme}
+              subtleBorder={subtleBorder}
+            />
+            {pharmacy && (
+              <SummaryRow
+                label="الصيدلية"
+                value={pharmacy.name}
+                theme={theme}
+                subtleBorder={subtleBorder}
+              />
+            )}
+            {daysSupply && !isChronic && (
+              <SummaryRow
+                label="الأمداد"
+                value={`${daysSupply} يوم`}
+                theme={theme}
+                subtleBorder={subtleBorder}
+              />
+            )}
           </View>
         )}
 
         <View style={{ width: "100%", gap: Spacing.sm, marginTop: Spacing.md }}>
-          <Pressable onPress={onMyMeds} style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}>
-            <LinearGradient colors={[theme.primary, theme.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionGrad}>
+          <Pressable
+            onPress={onMyMeds}
+            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+          >
+            <LinearGradient
+              colors={[theme.primary, theme.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.actionGrad}
+            >
               <MaterialCommunityIcons name="pill" size={18} color="#fff" />
-              <ThemedText type="body" style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}>أدويتي الدائمة</ThemedText>
+              <ThemedText
+                type="body"
+                style={{ color: "#fff", fontWeight: "800", marginRight: 6 }}
+              >
+                أدويتي الدائمة
+              </ThemedText>
             </LinearGradient>
           </Pressable>
-          <Pressable onPress={onHome} style={[styles.homeBtn, { borderColor: subtleBorder }]}>
-            <ThemedText type="body" style={{ color: theme.textSecondary, fontWeight: "700" }}>الصفحة الرئيسية</ThemedText>
+          <Pressable
+            onPress={onHome}
+            style={[styles.homeBtn, { borderColor: subtleBorder }]}
+          >
+            <ThemedText
+              type="body"
+              style={{ color: theme.textSecondary, fontWeight: "700" }}
+            >
+              الصفحة الرئيسية
+            </ThemedText>
           </Pressable>
         </View>
       </Animated.View>
@@ -1265,15 +2611,25 @@ function StepDone({ drug, pharmacy, daysSupply, endDate, isChronic, onHome, onMy
   );
 }
 
-function SummaryRow({ label, value, theme, subtleBorder }: {
-  label: string; value: string;
+function SummaryRow({
+  label,
+  value,
+  theme,
+  subtleBorder,
+}: {
+  label: string;
+  value: string;
   theme: ReturnType<typeof useTheme>["theme"];
   subtleBorder: string;
 }) {
   return (
     <View style={[styles.summaryRow, { borderBottomColor: subtleBorder }]}>
-      <ThemedText type="small"   style={{ color: theme.text,          fontWeight: "700" }}>{value}</ThemedText>
-      <ThemedText type="caption" style={{ color: theme.textSecondary }}>{label}</ThemedText>
+      <ThemedText type="small" style={{ color: theme.text, fontWeight: "700" }}>
+        {value}
+      </ThemedText>
+      <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+        {label}
+      </ThemedText>
     </View>
   );
 }
@@ -1284,90 +2640,388 @@ const darkMapStyle = [
   { elementType: "geometry", stylers: [{ color: "#1a2233" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#8b9ab0" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#1a2233" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#252f42" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0d1117" }] },
-  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#1e2a3a" }] },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#252f42" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#0d1117" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#1e2a3a" }],
+  },
 ];
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   headerBtn: { padding: Spacing.xs, width: 36 },
 
-  searchCard: { borderRadius: BorderRadius.lg, borderWidth: 1, padding: Spacing.md },
-  inputRow:   { flexDirection: "row", alignItems: "center", borderRadius: BorderRadius.md, borderWidth: 1, overflow: "hidden", height: 52 },
-  inputSearchBtn: { width: 52, height: 52, alignItems: "center", justifyContent: "center" },
-  textInput:  { flex: 1, paddingHorizontal: Spacing.md, fontFamily: "Cairo-Regular", fontSize: 15, height: 52 },
+  searchCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    padding: Spacing.md,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+    height: 52,
+  },
+  inputSearchBtn: {
+    width: 52,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textInput: {
+    flex: 1,
+    paddingHorizontal: Spacing.md,
+    fontFamily: "Cairo-Regular",
+    fontSize: 15,
+    height: 52,
+  },
 
-  orRow:  { flexDirection: "row", alignItems: "center", marginVertical: Spacing.lg },
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: Spacing.lg,
+  },
   orLine: { flex: 1, height: StyleSheet.hairlineWidth },
 
   imagePickRow: { flexDirection: "row", gap: Spacing.md },
-  imagePickBtn: { flex: 1, borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
-  imagePickGrad:{ paddingVertical: Spacing.xl, alignItems: "center", justifyContent: "center" },
+  imagePickBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  imagePickGrad: {
+    paddingVertical: Spacing.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-  recognizingCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: Spacing.lg, padding: Spacing.md, borderRadius: BorderRadius.lg },
+  recognizingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.lg,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
 
-  notDrugCard:     { borderRadius: BorderRadius.lg, borderWidth: 1.5, padding: Spacing.lg, alignItems: "center", marginBottom: Spacing.lg },
-  notDrugIconWrap: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
-  notDrugActions:  { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md, width: "100%" },
-  notDrugBtn:      { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, gap: 4 },
-  notDrugBtnOutline: { paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.lg, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  notDrugCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    padding: Spacing.lg,
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  notDrugIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notDrugActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    width: "100%",
+  },
+  notDrugBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  notDrugBtnOutline: {
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-  drugCard:       { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
-  drugCardHeader: { flexDirection: "row", alignItems: "center", padding: Spacing.md },
-  drugIconWrap:   { width: 72, height: 72, borderRadius: BorderRadius.md, alignItems: "center", justifyContent: "center" },
-  drugImage:      { width: 72, height: 72, borderRadius: BorderRadius.md },
-  infoRow:        { flexDirection: "row", alignItems: "flex-start", padding: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth },
+  drugCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  drugCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+  },
+  drugIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  drugImage: { width: 72, height: 72, borderRadius: BorderRadius.md },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
 
   confirmBtns: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.lg },
-  changeBtn:   { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1, gap: 4 },
-  confirmGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.full, gap: 4 },
+  changeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    gap: 4,
+  },
+  confirmGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
 
-  compactDrugRow:  { flexDirection: "row", alignItems: "center", padding: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1, gap: Spacing.sm },
-  compactDrugIcon: { width: 36, height: 36, borderRadius: BorderRadius.sm, alignItems: "center", justifyContent: "center" },
+  compactDrugRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    gap: Spacing.sm,
+  },
+  compactDrugIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   radiusRow: { flexDirection: "row", gap: Spacing.sm, flexWrap: "wrap" },
-  radiusBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, borderRadius: BorderRadius.full, borderWidth: 1 },
+  radiusBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
 
-  searchActions:   { flexDirection: "row", alignItems: "center", marginTop: Spacing.md, gap: Spacing.sm },
-  actionGrad:      { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: Spacing.md, borderRadius: BorderRadius.full, gap: 6 },
-  cancelSmallBtn:  { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
+  searchActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  actionGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+    gap: 6,
+  },
+  cancelSmallBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
 
-  deliveryCard:    { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1.5, marginBottom: Spacing.md, gap: Spacing.sm },
-  timerCard:       { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1, marginTop: Spacing.md, gap: Spacing.sm },
-  extendRow:       { marginTop: Spacing.md },
-  extendBtns:      { flexDirection: "row", gap: Spacing.sm },
-  extendBtn:       { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
-  deliveryActions: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.lg, alignItems: "center" },
-  cancelBtn:       { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.full, borderWidth: 1 },
+  deliveryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  timerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  extendRow: { marginTop: Spacing.md },
+  extendBtns: { flexDirection: "row", gap: Spacing.sm },
+  extendBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  deliveryActions: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.lg,
+    alignItems: "center",
+  },
+  cancelBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
 
-  rateIcon:  { width: 100, height: 100, borderRadius: 50, alignItems: "center", justifyContent: "center", marginTop: Spacing.xl },
-  starsRow:  { flexDirection: "row", marginTop: Spacing.xl, marginBottom: Spacing.xl },
+  rateIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.xl,
+  },
+  starsRow: {
+    flexDirection: "row",
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.xl,
+  },
   submitBtn: { width: "100%", marginTop: Spacing.md },
 
-  doseCard: { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden" },
-  doseRow:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: Spacing.md, paddingHorizontal: Spacing.md },
+  doseCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  doseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
   counterRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
-  counterBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  toggle:     { width: 48, height: 28, borderRadius: 14, justifyContent: "center" },
-  toggleThumb:{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 2, elevation: 2 },
-  endDateCard:{ flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1, marginTop: Spacing.md, gap: Spacing.sm },
+  counterBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggle: { width: 48, height: 28, borderRadius: 14, justifyContent: "center" },
+  toggleThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  endDateCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
 
-  doneIcon:    { width: 120, height: 120, borderRadius: 60, alignItems: "center", justifyContent: "center", marginTop: Spacing.xl },
-  doneSummary: { borderRadius: BorderRadius.lg, borderWidth: 1, overflow: "hidden", marginTop: Spacing.lg },
-  summaryRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
-  homeBtn:     { paddingVertical: Spacing.md, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center" },
+  doneIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.xl,
+  },
+  doneSummary: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginTop: Spacing.lg,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  homeBtn: {
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    alignItems: "center",
+  },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalSheet:   { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, paddingBottom: 40 },
-  reasonRow:    { flexDirection: "row", alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing.sm },
-  radioOuter:   { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  radioInner:   { width: 10, height: 10, borderRadius: 5 },
-  customReasonInput: { borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md, minHeight: 80, fontFamily: "Cairo-Regular", marginBottom: Spacing.md, textAlignVertical: "top" },
-  modalBtns:    { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.md },
-  modalBtn:     { flex: 1, paddingVertical: Spacing.md, borderRadius: BorderRadius.full, borderWidth: 1, alignItems: "center" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: Spacing.lg,
+    paddingBottom: 40,
+  },
+  reasonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.sm,
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
+  customReasonInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    minHeight: 80,
+    fontFamily: "Cairo-Regular",
+    marginBottom: Spacing.md,
+    textAlignVertical: "top",
+  },
+  modalBtns: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.md },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    alignItems: "center",
+  },
 
   // ── New search bar ──────────────────────────────────────────────────────────
   newSearchBar: {
