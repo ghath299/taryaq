@@ -1,0 +1,101 @@
+─────────────────────────────────────
+التعديلات المطلوبة في واجهة العلاج ولصيدليات 
+─────────────────────────────────────
+
+1. شريط البحث (Search Bar):
+- أضف أيقونة scan صغيرة على يسار شريط البحث (داخله)
+- عند الضغط عليها يظهر Bottom Sheet من الأسفل فيه خيارين: الكاميرا والمعرض
+- احذف زري الكاميرا والمعرض الكبيرين الموجودين تحت شريط البحث
+- احذف نص "أو" والنص التوضيحي بينهم
+
+2. أضف بعد شريط البحث مباشرة:
+- خريطة تعرض الصيدليات القريبة مع markers خضر وتقييمات
+- ملاحظة: على الويب اعرض خريطة وهمية بنفس التصميم بدل MapView
+
+- قسم "الأقرب إليّ" يحتوي على كاردات الصيدليات القريبة
+- كل كارد يحتوي: صورة الصيدلية، الاسم، العنوان، التقييم، المسافة، شارة مفتوح/مغلق، زر اتجاه
+
+─────────────────────────────────────
+أحجام العناصر بالضبط:
+─────────────────────────────────────
+
+Search Bar:
+- height: 66
+- borderRadius: 28
+- زر البحث الأزرق: width:56, height:56, borderRadius:22
+- حجم أيقونة البحث: 26
+- Placeholder fontSize: 17, fontWeight: 500
+
+Map Container:
+- height: 320
+- borderRadius: 30
+- marginTop: 18
+
+Map Pharmacy Marker:
+- width:52, height:52, borderRadius:26
+- لون أخضر مع glow effect
+- Medical Plus Icon size: 24
+
+Rating Bubble على الماركر:
+- height:28, paddingHorizontal:10, borderRadius:14
+- fontSize:15, fontWeight:700
+
+Nearby Pharmacies Section:
+- borderRadius:28, padding:14
+- عنوان القسم: fontSize:22, fontWeight:800
+
+Pharmacy Card:
+- height:148, borderRadius:24, padding:12, marginBottom:12
+
+Pharmacy Image:
+- width:92, height:92, borderRadius:20
+
+Pharmacy Name:
+- fontSize:22, fontWeight:800
+
+Address Text:
+- fontSize:15, lineHeight:22
+
+Open Badge:
+- height:32, paddingHorizontal:14, borderRadius:16
+- fontSize:14, fontWeight:700
+- أخضر إذا مفتوح، أحمر إذا مغلق
+
+Rating + Distance:
+- fontSize:15, fontWeight:600
+
+Direction Button:
+- width:48, height:48, borderRadius:24
+- Arrow Icon size:22
+
+─────────────────────────────────────
+الأنيميشنات المطلوبة:
+─────────────────────────────────────
+
+- شريط البحث: يدخل من فوق مع spring effect
+- أيقونة الـ scan: نبضة خفيفة متكررة
+- الخريطة: تظهر مع FadeIn بعد 200ms
+- ماركرات الخريطة: pulse glow متكرر
+- كاردات الصيدليات: تصعد من تحت واحدة بعد الثانية (staggered) مع delay 120ms بين كل كارد
+- Bottom Sheet الكاميرا: يطلع من الأسفل مع SpringIn
+
+─────────────────────────────────────
+ملاحظات تقنية مهمة:
+─────────────────────────────────────
+
+- المشروع يعمل على الويب (web) وعلى الموبايل
+- react-native-maps لا تعمل على الويب، استخدم conditional import:
+  const isNative = Platform.OS !== "web"
+  واعرض خريطة وهمية بنفس التصميم على الويب
+
+- لا تستخدم اسم أيقونة "pharmacy" في MaterialCommunityIcons (غير موجود)
+  استخدم "pill" أو "medical-bag" بدلاً منه
+
+- لا تستورد useRef أو TouchableOpacity إذا ما راح تستخدمهم
+
+- API لجلب الصيدليات القريبة:
+  GET /api/pharmacies/nearby?lat={latitude}&lng={longitude}&radius=2000
+  الـ response: { pharmacies: [{ id, name, address, distanceM, rating, isOpen, latitude, longitude, imageUrl }] }
+  إذا فشل الـ request، اعرض skeleton cards بدون crash
+
+الصورة المرفقة توضح التصميم المطلوب بالضبط، طابقه بأدق التفاصيل.
