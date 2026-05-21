@@ -1,12 +1,9 @@
 import { Stack } from "expo-router";
 import { Platform } from "react-native";
-import { useTheme } from "@/hooks/useTheme";
 
 export default function AuthLayout() {
-  const { theme } = useTheme();
   return (
     <>
-      {/* recaptcha-container هنا يبقى موجود في كل شاشات المصادقة */}
       {Platform.OS === "web" && (
         <div
           id="recaptcha-container"
@@ -24,7 +21,7 @@ export default function AuthLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: theme.backgroundRoot },
+          contentStyle: { backgroundColor: "#0A0F1A" },
           animation: "slide_from_right",
         }}
       >
