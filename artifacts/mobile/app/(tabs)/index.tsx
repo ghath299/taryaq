@@ -20,6 +20,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
+  withSequence,
   Easing,
   runOnJS,
 } from "react-native-reanimated";
@@ -32,6 +34,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { doctors as mockDoctors } from "@/data/mockData";
 import { Spacing, addAlpha } from "@/constants/colors";
 import { getRandomTips } from "@/data/healthTips";
+import { fetchHealthSummary, type HealthSummary } from "@/services/healthDataService";
+import {
+  getSmartHealthTip,
+  getActivityLabel,
+  getStatusColor,
+  getActivityBarPercent,
+} from "@/services/smartHealthAnalyzer";
+import HealthPermissionModal from "@/components/HealthPermissionModal";
 
 const BRAND_BLUE = "#2A4FCC";
 const BRAND_BLUE_DEEP = "#1F40C8";
@@ -111,6 +121,45 @@ export default function HomeScreen() {
   const router = useRouter();
   const [emergencyVisible, setEmergencyVisible] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [permModalVisible, setPermModalVisible] = useState(false);
+  const [healthData, setHealthData] = useState<HealthSummary | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+
+  // ── Health Data ────────────────────────────────────────────────────────────
+  const barWidth = useSharedValue(0);
+  const heartScale = useSharedValue(1);
+
+  const barFillStyle = useAnimatedStyle(() => ({
+    width: barWidth.value + "%",
+  }));
+  const heartPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+  }));
+
+  useEffect(() => {
+    fetchHealthSummary()
+      .then((data) => {
+        setHealthData(data);
+        setHealthLoading(false);
+        const target = getActivityBarPercent(data.activity.level);
+        barWidth.value = withTiming(target, { duration: 900, easing: Easing.out(Easing.ease) });
+        heartScale.value = withRepeat(
+          withSequence(
+            withTiming(1.2, { duration: 650 }),
+            withTiming(1, { duration: 650 }),
+          ),
+          -1,
+          false,
+        );
+        const smartTip = getSmartHealthTip(data);
+        sessionTips.current = [smartTip, ...sessionTips.current.slice(0, 9)];
+        setVisibleTip(smartTip);
+        setTipIndex(0);
+      })
+      .catch(() => setHealthLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── Rotating Tips ──────────────────────────────────────────────────────────
   const sessionTips = useRef<string[]>(getRandomTips(10));
@@ -432,138 +481,136 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* HEALTH STATUS CARD */}
-        <Animated.View
-          style={styles.section}
-        >
+        <Animated.View entering={FadeIn.duration(500)} style={styles.section}>
           <View
             style={[
               styles.healthCard,
               { backgroundColor: cardBg, borderColor: subtleBorder },
             ]}
           >
-            <View style={styles.healthHeader}>
-              <Feather name="heart" size={15} color={BRAND_BLUE_DEEP} />
-              <ThemedText
-                type="small"
-                style={{
-                  color: textPrimary,
-                  fontWeight: "800",
-                  marginRight: 6,
-                }}
+            {/* Header */}
+            <View style={[styles.healthHeader, { justifyContent: "space-between" }]}>
+              <Pressable
+                onPress={() => setPermModalVisible(true)}
+                style={[styles.connectBtn, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}
               >
-                حالتك اليوم
-              </ThemedText>
-            </View>
-
-            <View style={styles.healthBody}>
-              <View
-                style={[styles.healthMetric, { backgroundColor: metricBg }]}
-              >
-                <Feather name="activity" size={14} color={textSecondary} />
-                <ThemedText
-                  type="caption"
-                  style={{ color: textSecondary, marginTop: 4 }}
-                >
-                  النشاط
+                <Feather name="link" size={11} color={BRAND_BLUE_DEEP} />
+                <ThemedText type="caption" style={{ color: BRAND_BLUE_DEEP, fontSize: 11, fontWeight: "600" }}>
+                  {healthData?.isConnected ? "مرتبط" : "ربط الساعة"}
                 </ThemedText>
+              </Pressable>
+              <View style={{ flexDirection: "row-reverse", alignItems: "center" }}>
+                <Animated.View style={heartPulseStyle}>
+                  <Feather name="heart" size={15} color={BRAND_BLUE_DEEP} />
+                </Animated.View>
                 <ThemedText
                   type="small"
-                  style={{
-                    color: textPrimary,
-                    fontWeight: "700",
-                    marginTop: 2,
-                  }}
+                  style={{ color: textPrimary, fontWeight: "800", marginRight: 6 }}
                 >
-                  متوسط
+                  حالتك اليوم
                 </ThemedText>
-                <View
-                  style={[
-                    styles.healthBar,
-                    { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.healthBarFill,
-                      { backgroundColor: BRAND_BLUE_DEEP, width: "55%" },
-                    ]}
-                  />
+              </View>
+            </View>
+
+            {/* Body */}
+            {healthLoading ? (
+              /* Skeleton Loading */
+              <View style={styles.healthBody}>
+                {[0, 1, 2].map((i) => (
+                  <View key={i} style={[styles.healthMetric, { backgroundColor: metricBg }]}>
+                    <View style={[styles.skeletonLine, { width: 24, height: 14, marginBottom: 6, backgroundColor: addAlpha(textSecondary, 0.25) }]} />
+                    <View style={[styles.skeletonLine, { width: 40, height: 10, marginBottom: 4, backgroundColor: addAlpha(textSecondary, 0.15) }]} />
+                    <View style={[styles.skeletonLine, { width: 32, height: 10, backgroundColor: addAlpha(textSecondary, 0.1) }]} />
+                  </View>
+                ))}
+                <View style={styles.healthShield} />
+              </View>
+            ) : (
+              <View style={styles.healthBody}>
+                {/* النشاط */}
+                <View style={[styles.healthMetric, { backgroundColor: metricBg }]}>
+                  <Feather name="activity" size={14} color={textSecondary} />
+                  <ThemedText type="caption" style={{ color: textSecondary, marginTop: 4 }}>
+                    النشاط
+                  </ThemedText>
+                  <ThemedText type="small" style={{ color: textPrimary, fontWeight: "700", marginTop: 2 }}>
+                    {getActivityLabel(healthData?.activity.level ?? "moderate")}
+                  </ThemedText>
+                  <View style={[styles.healthBar, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}>
+                    <Animated.View
+                      style={[styles.healthBarFill, { backgroundColor: BRAND_BLUE_DEEP }, barFillStyle]}
+                    />
+                  </View>
                 </View>
-              </View>
 
-              <View
-                style={[styles.healthMetric, { backgroundColor: metricBg }]}
-              >
-                <Feather name="droplet" size={14} color={textSecondary} />
-                <ThemedText
-                  type="caption"
-                  style={{ color: textSecondary, marginTop: 4 }}
-                >
-                  ضغط الدم
-                </ThemedText>
-                <ThemedText
-                  type="small"
-                  style={{
-                    color: textPrimary,
-                    fontWeight: "700",
-                    marginTop: 2,
-                  }}
-                >
-                  120/80
-                </ThemedText>
-                <ThemedText
-                  type="caption"
-                  style={{
-                    color: "#22C55E",
-                    marginTop: 2,
-                    fontWeight: "700",
-                    fontSize: 11,
-                  }}
-                >
-                  طبيعي
-                </ThemedText>
-              </View>
+                {/* ضغط الدم */}
+                <View style={[styles.healthMetric, { backgroundColor: metricBg }]}>
+                  <Feather name="droplet" size={14} color={textSecondary} />
+                  <ThemedText type="caption" style={{ color: textSecondary, marginTop: 4 }}>
+                    ضغط الدم
+                  </ThemedText>
+                  <ThemedText type="small" style={{ color: textPrimary, fontWeight: "700", marginTop: 2 }}>
+                    {healthData?.bloodPressure.systolic != null
+                      ? `${healthData.bloodPressure.systolic}/${healthData.bloodPressure.diastolic}`
+                      : "غير متوفر"}
+                  </ThemedText>
+                  <ThemedText
+                    type="caption"
+                    style={{
+                      color: getStatusColor(healthData?.bloodPressure.status ?? "unavailable"),
+                      marginTop: 2,
+                      fontWeight: "700",
+                      fontSize: 11,
+                    }}
+                  >
+                    {healthData?.bloodPressure.status === "normal"
+                      ? "طبيعي"
+                      : healthData?.bloodPressure.status === "high"
+                      ? "مرتفع"
+                      : healthData?.bloodPressure.status === "low"
+                      ? "منخفض"
+                      : "—"}
+                  </ThemedText>
+                </View>
 
-              <View
-                style={[styles.healthMetric, { backgroundColor: metricBg }]}
-              >
-                <Feather name="heart" size={14} color={textSecondary} />
-                <ThemedText
-                  type="caption"
-                  style={{ color: textSecondary, marginTop: 4 }}
-                >
-                  نبض القلب
-                </ThemedText>
-                <ThemedText
-                  type="small"
-                  style={{
-                    color: textPrimary,
-                    fontWeight: "700",
-                    marginTop: 2,
-                  }}
-                >
-                  72
-                </ThemedText>
-                <ThemedText
-                  type="caption"
-                  style={{
-                    color: "#22C55E",
-                    marginTop: 2,
-                    fontWeight: "700",
-                    fontSize: 11,
-                  }}
-                >
-                  طبيعي
-                </ThemedText>
-              </View>
+                {/* نبض القلب */}
+                <View style={[styles.healthMetric, { backgroundColor: metricBg }]}>
+                  <Feather name="heart" size={14} color={textSecondary} />
+                  <ThemedText type="caption" style={{ color: textSecondary, marginTop: 4 }}>
+                    نبض القلب
+                  </ThemedText>
+                  <ThemedText type="small" style={{ color: textPrimary, fontWeight: "700", marginTop: 2 }}>
+                    {healthData?.heartRate.value != null
+                      ? String(healthData.heartRate.value)
+                      : "—"}
+                  </ThemedText>
+                  <ThemedText
+                    type="caption"
+                    style={{
+                      color: getStatusColor(healthData?.heartRate.status ?? "unavailable"),
+                      marginTop: 2,
+                      fontWeight: "700",
+                      fontSize: 11,
+                    }}
+                  >
+                    {healthData?.heartRate.status === "normal"
+                      ? "طبيعي"
+                      : healthData?.heartRate.status === "high"
+                      ? "مرتفع"
+                      : healthData?.heartRate.status === "low"
+                      ? "منخفض"
+                      : "—"}
+                  </ThemedText>
+                </View>
 
-              <Image
-                source={require("@/assets/images/health-shield.png")}
-                style={styles.healthShield}
-                contentFit="contain"
-                cachePolicy="memory-disk"
-              />
-            </View>
+                <Image
+                  source={require("@/assets/images/health-shield.png")}
+                  style={styles.healthShield}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                />
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -652,6 +699,10 @@ export default function HomeScreen() {
       <EmergencyModal
         visible={emergencyVisible}
         onClose={() => setEmergencyVisible(false)}
+      />
+      <HealthPermissionModal
+        visible={permModalVisible}
+        onClose={() => setPermModalVisible(false)}
       />
     </SafeAreaView>
   );
@@ -1001,6 +1052,17 @@ const styles = StyleSheet.create({
   healthBarFill: {
     height: "100%",
     borderRadius: 2,
+  },
+  connectBtn: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  skeletonLine: {
+    borderRadius: 6,
   },
 
   tipCard: {
