@@ -1,0 +1,284 @@
+نبدأ الآن Phase 4: Android Health Connect الحقيقي.
+
+مهم:
+لا تضف HealthKit الآن.
+لا تضف BLE الآن.
+لا تغيّر تصميم الصفحة الرئيسية.
+لا تبني شاشة جديدة.
+لا تكسر كارد "حالتك اليوم".
+لا تكسر إعدادات الصحة.
+لا تكسر التنبيهات المحلية.
+لا تغيّر Firebase أو OTP أو تسجيل الدخول.
+
+قبل أي تعديل:
+افحص المشروع واكتب تقرير فقط:
+
+1. ما package manager المستخدم؟ pnpm أو npm أو yarn؟
+2. هل المشروع Expo managed؟
+3. هل يوجد app.json أو app.config.ts؟
+4. هل يوجد eas.json؟
+5. هل يوجد expo-dev-client؟
+6. هل يوجد expo-build-properties؟
+7. هل TypeScript حالياً = 0 errors؟
+8. هل healthDataService حالياً يرجع mock فقط؟
+9. هل spo2 موحد بالكامل؟
+10. أين HealthPermissionModal؟
+11. أين زر "ربط الساعة"؟
+12. أين شاشة إعدادات الصحة؟
+
+لا تبدأ التنفيذ قبل التقرير.
+
+━━━━━━━━━━━━━━━━━━━━
+الهدف
+━━━━━━━━━━━━━━━━━━━━
+
+أريد ربط ترياق فعلياً مع Android Health Connect حتى يقرأ بيانات الساعة أو تطبيق الساعة إذا كانت البيانات مشتركة داخل Health Connect.
+
+البيانات المطلوبة:
+- Steps
+- Heart Rate
+- Resting Heart Rate إذا متوفر
+- Sleep
+- Calories
+- Oxygen Saturation / SpO2
+- Blood Pressure
+
+Health Connect يدعم أنواع بيانات مثل blood pressure وblood oxygen وsleep وغيرها، لكن توفرها يعتمد على الجهاز والتطبيق الذي يكتب البيانات. استخدم فقط الأنواع التي تدعمها المكتبة فعلياً ولا تخمن أسماء records أو permissions.
+
+━━━━━━━━━━━━━━━━━━━━
+المكتبة
+━━━━━━━━━━━━━━━━━━━━
+
+افحص المكتبة الأنسب للمشروع:
+
+الخيار المفضل:
+react-native-health-connect
+
+أو إذا وجدت أن المشروع Expo ويحتاج plugin:
+expo-health-connect أو config plugin مناسب.
+
+قبل التثبيت اكتب لي:
+- اسم المكتبة التي اخترتها
+- سبب الاختيار
+- هل تحتاج config plugin؟
+- هل تحتاج expo-build-properties؟
+- هل تحتاج expo-dev-client؟
+- هل تعمل داخل Expo Go؟
+- هل تحتاج Development Build؟
+
+لا تستخدم npm إذا المشروع يستخدم pnpm.
+
+━━━━━━━━━━━━━━━━━━━━
+التنفيذ المطلوب
+━━━━━━━━━━━━━━━━━━━━
+
+أنشئ ملف:
+
+services/healthConnectAdapter.ts
+
+ويحتوي دوال:
+
+1. isHealthConnectAvailable()
+يتحقق هل Health Connect متاح على الجهاز.
+
+2. initializeHealthConnect()
+يهيئ Health Connect.
+
+3. requestHealthConnectPermissions()
+يطلب صلاحيات القراءة فقط للبيانات المطلوبة.
+
+4. getGrantedHealthPermissions()
+يرجع الصلاحيات الممنوحة.
+
+5. readTodayHealthConnectSummary()
+يقرأ بيانات اليوم فقط ويرجع HealthSummary موحد.
+
+6. openHealthConnectSettings()
+يفتح إعدادات Health Connect إذا المكتبة تدعم.
+
+━━━━━━━━━━━━━━━━━━━━
+ربط healthDataService
+━━━━━━━━━━━━━━━━━━━━
+
+عدّل:
+
+services/healthDataService.ts
+
+المطلوب:
+
+- إذا Android + Health Connect متاح + الصلاحيات ممنوحة:
+  source = "health_connect"
+  connected = true
+  ويرجع بيانات حقيقية.
+
+- إذا Health Connect غير متاح:
+  source = "none"
+  connected = false
+  message = "Health Connect غير متاح على هذا الجهاز"
+
+- إذا الصلاحيات مرفوضة:
+  source = "none"
+  connected = false
+  message = "لم يتم منح صلاحيات قراءة البيانات الصحية"
+
+- إذا Web:
+  لا تكسر Web Preview.
+  استخدم mock DEV فقط مع شارة "بيانات تجريبية للمعاينة"
+
+- إذا iOS:
+  لا تضف HealthKit الآن.
+  message = "Apple Health سيتم دعمه لاحقاً"
+
+━━━━━━━━━━━━━━━━━━━━
+Mapping إلى HealthSummary
+━━━━━━━━━━━━━━━━━━━━
+
+حوّل بيانات Health Connect إلى الشكل الحالي:
+
+heartRate:
+- current
+- average
+- min
+- max
+- resting إذا متوفر
+- status
+
+steps:
+- today
+- goal من healthSettingsService
+- progress
+- status
+
+sleep:
+- totalMinutes
+- qualityScore تقريبي
+- bedtime
+- wakeTime
+- status
+
+calories:
+- burned
+- status
+
+activity:
+- activeMinutes إذا متوفر
+- status
+
+spo2:
+- latest
+- average
+- status
+
+bloodPressure:
+- systolic
+- diastolic
+- status
+
+إذا أي بيانات غير متوفرة:
+لا تعمل crash.
+اعرض "غير متوفر" أو أخفِ الكارد حسب التصميم الحالي.
+
+━━━━━━━━━━━━━━━━━━━━
+زر ربط الساعة
+━━━━━━━━━━━━━━━━━━━━
+
+عدّل HealthPermissionModal:
+
+عند الضغط على "ربط البيانات الصحية":
+
+1. تحقق من Health Connect.
+2. إذا غير متاح:
+   اعرض "Health Connect غير متاح أو غير مثبت على هذا الجهاز."
+3. إذا متاح:
+   اطلب صلاحيات القراءة.
+4. إذا وافق المستخدم:
+   شغّل fetchHealthSummary()
+   حدّث كارد "حالتك اليوم"
+   حدّث حالة الربط داخل إعدادات الصحة.
+5. إذا رفض:
+   اعرض "لم يتم منح الصلاحيات. يمكنك تفعيلها لاحقاً من إعدادات الصحة."
+
+━━━━━━━━━━━━━━━━━━━━
+إعدادات الصحة
+━━━━━━━━━━━━━━━━━━━━
+
+داخل app/health-settings.tsx أضف بدون ازدحام:
+
+- زر "فحص Health Connect"
+- زر "طلب الصلاحيات"
+- زر "فتح إعدادات Health Connect"
+- عرض الصلاحيات الممنوحة
+- عرض المصدر الحالي:
+  بيانات تجريبية / Health Connect / غير مربوط
+
+━━━━━━━━━━━━━━━━━━━━
+التنبيهات
+━━━━━━━━━━━━━━━━━━━━
+
+بعد قراءة بيانات حقيقية:
+- مرّر HealthSummary إلى smartHealthAnalyzer
+- ثم smartHealthNotificationService
+- احترم Quiet Hours
+- احترم حد 3 تنبيهات يومياً
+- لا تكرر نفس النوع خلال 6 ساعات
+- لا ترسل أكثر من تنبيه واحد بكل فحص
+
+لا ترسل إشعار بسبب mock خارج DEV.
+
+━━━━━━━━━━━━━━━━━━━━
+GT FIT Pro
+━━━━━━━━━━━━━━━━━━━━
+
+أضف في التقرير تعليمات اختبار:
+
+1. افتح GT FIT Pro وتأكد الساعة مربوطة والنبض/الخطوات تظهر داخله.
+2. افتح Health Connect على الهاتف.
+3. افحص هل GT FIT Pro ظاهر ضمن التطبيقات.
+4. إذا ظهر، فعّل له كتابة البيانات الصحية.
+5. افتح ترياق واضغط "ربط الساعة".
+6. امنح ترياق صلاحية قراءة البيانات.
+7. تأكد أن source صار health_connect.
+
+إذا GT FIT Pro غير ظاهر داخل Health Connect:
+اكتب بوضوح:
+"تطبيق الساعة لا يشارك البيانات مع Health Connect، لذلك لا يمكن لترياق قراءة بياناته عبر Health Connect حالياً. نحتاج BLE Direct كمرحلة منفصلة."
+
+━━━━━━━━━━━━━━━━━━━━
+Build
+━━━━━━━━━━━━━━━━━━━━
+
+بعد التنفيذ:
+1. شغّل TypeScript check
+2. شغّل lint إن وجد
+3. تأكد Web Preview لا ينكسر
+4. جهّز EAS Development Build Android
+
+إذا لا يوجد eas.json:
+أنشئه بشكل آمن.
+
+استخدم profile:
+development
+
+ولا تعتبر Expo Go كافياً لاختبار Health Connect إذا المكتبة تحتاج native code.
+
+━━━━━━━━━━━━━━━━━━━━
+التقرير النهائي المطلوب
+━━━━━━━━━━━━━━━━━━━━
+
+أعطني تقرير فعلي:
+
+1. ما المكتبة التي ثبّتها؟
+2. ما الملفات الجديدة؟
+3. ما الملفات المعدلة؟
+4. هل TypeScript بقي 0 errors؟
+5. هل Web Preview ما زال يعمل؟
+6. هل Expo Go يدعم هذا الربط؟ نعم/لا ولماذا؟
+7. هل يحتاج Development Build؟ نعم/لا ولماذا؟
+8. هل Health Connect permissions تُطلب فعلياً؟
+9. هل healthDataService صار يقرأ health_connect؟
+10. هل mock بقي فقط للـ DEV/Web؟
+11. هل زر "ربط الساعة" يطلب الصلاحيات؟
+12. هل إعدادات الصحة تعرض حالة الربط؟
+13. هل spo2 موحد؟
+14. هل GT FIT Pro ظهر في Health Connect أم لا؟
+15. إذا لم يظهر GT FIT Pro، ما الخطة التالية؟
