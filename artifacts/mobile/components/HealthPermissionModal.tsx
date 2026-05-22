@@ -76,7 +76,7 @@ export default function HealthPermissionModal({
 
           {/* العنوان */}
           <ThemedText
-            type="title"
+            type="h3"
             style={[styles.title, { color: textPrimary }]}
           >
             ربط البيانات الصحية

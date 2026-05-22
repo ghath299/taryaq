@@ -6,6 +6,7 @@ import {
   Pressable,
   TextInput,
   Platform,
+  Text,
 } from "react-native";
 import { Image } from "expo-image";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -34,7 +35,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { doctors as mockDoctors } from "@/data/mockData";
 import { Spacing, addAlpha } from "@/constants/colors";
 import { getRandomTips } from "@/data/healthTips";
-import { fetchHealthSummary, type HealthSummary } from "@/services/healthDataService";
+import {
+  fetchHealthSummary,
+  saveHealthCache,
+  loadHealthCache,
+  type HealthSummary,
+} from "@/services/healthDataService";
 import {
   getSmartHealthTip,
   getActivityLabel,
@@ -50,6 +56,12 @@ const BRAND_PURPLE = "#A78BFA";
 const ICON_CYAN = "#3FC8E5";
 const SOFT_BG = "#F5F7FB";
 const METRIC_BG = "#F4F6FA";
+
+function getScoreBadgeBg(score: number): string {
+  if (score >= 80) return "#22C55E";
+  if (score >= 60) return "#F97316";
+  return "#EAB308";
+}
 
 const doctorImages: Record<string, ReturnType<typeof require>> = {
   "1": require("@/assets/images/doctor-ahmed.png"),
@@ -124,39 +136,77 @@ export default function HomeScreen() {
   const [permModalVisible, setPermModalVisible] = useState(false);
   const [healthData, setHealthData] = useState<HealthSummary | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState(false);
 
   // ── Health Data ────────────────────────────────────────────────────────────
   const barWidth = useSharedValue(0);
   const heartScale = useSharedValue(1);
 
   const barFillStyle = useAnimatedStyle(() => ({
-    width: barWidth.value + "%",
+    width: `${barWidth.value}%` as `${number}%`,
   }));
   const heartPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: heartScale.value }],
   }));
 
-  useEffect(() => {
-    fetchHealthSummary()
-      .then((data) => {
-        setHealthData(data);
-        setHealthLoading(false);
-        const target = getActivityBarPercent(data.activity.level);
-        barWidth.value = withTiming(target, { duration: 900, easing: Easing.out(Easing.ease) });
+  const pulseStarted = useRef(false);
+
+  const applyHealthData = useCallback(
+    (data: HealthSummary) => {
+      setHealthData(data);
+      setHealthLoading(false);
+      setHealthError(false);
+      const target = getActivityBarPercent(data.activity.level);
+      barWidth.value = withTiming(target, { duration: 900, easing: Easing.out(Easing.ease) });
+      if (!pulseStarted.current) {
+        pulseStarted.current = true;
         heartScale.value = withRepeat(
           withSequence(
-            withTiming(1.2, { duration: 650 }),
-            withTiming(1, { duration: 650 }),
+            withTiming(1.12, { duration: 700 }),
+            withTiming(1.0, { duration: 700 }),
           ),
           -1,
           false,
         );
-        const smartTip = getSmartHealthTip(data);
-        sessionTips.current = [smartTip, ...sessionTips.current.slice(0, 9)];
-        setVisibleTip(smartTip);
-        setTipIndex(0);
+      }
+      const smartTip = getSmartHealthTip(data);
+      sessionTips.current = [smartTip, ...sessionTips.current.slice(0, 9)];
+      setVisibleTip(smartTip);
+      setTipIndex(0);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const retryHealth = useCallback(() => {
+    setHealthError(false);
+    setHealthLoading(true);
+    fetchHealthSummary()
+      .then(async (data) => {
+        applyHealthData(data);
+        await saveHealthCache(data);
       })
-      .catch(() => setHealthLoading(false));
+      .catch(() => {
+        setHealthError(true);
+        setHealthLoading(false);
+      });
+  }, [applyHealthData]);
+
+  useEffect(() => {
+    // ١. تحميل البيانات المؤقتة فوراً (إن وجدت)
+    loadHealthCache().then((cached) => {
+      if (cached) applyHealthData(cached.data);
+    });
+    // ٢. جلب بيانات حديثة
+    fetchHealthSummary()
+      .then(async (data) => {
+        applyHealthData(data);
+        await saveHealthCache(data);
+      })
+      .catch(() => {
+        setHealthError(true);
+        setHealthLoading(false);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // ──────────────────────────────────────────────────────────────────────────
@@ -499,7 +549,7 @@ export default function HomeScreen() {
                   {healthData?.isConnected ? "مرتبط" : "ربط الساعة"}
                 </ThemedText>
               </Pressable>
-              <View style={{ flexDirection: "row-reverse", alignItems: "center" }}>
+              <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 6 }}>
                 <Animated.View style={heartPulseStyle}>
                   <Feather name="heart" size={15} color={BRAND_BLUE_DEEP} />
                 </Animated.View>
@@ -509,11 +559,34 @@ export default function HomeScreen() {
                 >
                   حالتك اليوم
                 </ThemedText>
+                {/* Health Score Badge */}
+                {healthData && !healthLoading && (
+                  <View
+                    style={[
+                      styles.scoreBadge,
+                      { backgroundColor: getScoreBadgeBg(healthData.score) },
+                    ]}
+                  >
+                    <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "700", fontFamily: "Tajawal_700Bold" }}>
+                      {healthData.score}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
+            {/* شارة البيانات التجريبية */}
+            {healthData?.source === "mock" && !healthLoading && (
+              <View style={styles.mockBadge}>
+                <Feather name="info" size={10} color={addAlpha(textSecondary, 0.8)} />
+                <Text style={{ color: addAlpha(textSecondary, 0.8), fontSize: 10, marginRight: 4, fontFamily: "Tajawal_400Regular" }}>
+                  بيانات تجريبية للمعاينة
+                </Text>
+              </View>
+            )}
+
             {/* Body */}
-            {healthLoading ? (
+            {healthLoading && !healthData ? (
               /* Skeleton Loading */
               <View style={styles.healthBody}>
                 {[0, 1, 2].map((i) => (
@@ -524,6 +597,40 @@ export default function HomeScreen() {
                   </View>
                 ))}
                 <View style={styles.healthShield} />
+              </View>
+            ) : healthError && !healthData ? (
+              /* Error + Retry */
+              <View style={styles.healthEmptyState}>
+                <Feather name="wifi-off" size={26} color={addAlpha(textSecondary, 0.6)} />
+                <Text style={{ color: textSecondary, fontSize: 13, marginTop: 8, fontFamily: "Tajawal_400Regular", textAlign: "center" }}>
+                  تعذّر تحميل البيانات الصحية
+                </Text>
+                <Pressable
+                  onPress={retryHealth}
+                  style={[styles.retryBtn, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}
+                >
+                  <Feather name="refresh-cw" size={12} color={BRAND_BLUE_DEEP} />
+                  <Text style={{ color: BRAND_BLUE_DEEP, fontSize: 12, fontWeight: "600", marginRight: 5, fontFamily: "Tajawal_500Medium" }}>
+                    إعادة المحاولة
+                  </Text>
+                </Pressable>
+              </View>
+            ) : healthData?.source === "none" ? (
+              /* غير مربوط */
+              <View style={styles.healthEmptyState}>
+                <Feather name="link-2" size={26} color={addAlpha(textSecondary, 0.6)} />
+                <Text style={{ color: textSecondary, fontSize: 13, marginTop: 8, fontFamily: "Tajawal_400Regular", textAlign: "center" }}>
+                  اربط ساعتك أو تطبيق الصحة
+                </Text>
+                <Pressable
+                  onPress={() => setPermModalVisible(true)}
+                  style={[styles.retryBtn, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}
+                >
+                  <Feather name="link" size={12} color={BRAND_BLUE_DEEP} />
+                  <Text style={{ color: BRAND_BLUE_DEEP, fontSize: 12, fontWeight: "600", marginRight: 5, fontFamily: "Tajawal_500Medium" }}>
+                    ربط الآن
+                  </Text>
+                </Pressable>
               </View>
             ) : (
               <View style={styles.healthBody}>
@@ -639,20 +746,19 @@ export default function HomeScreen() {
                 <Feather name="zap" size={14} color="#FFB800" />
               </View>
               <View style={{ overflow: "hidden", marginTop: 6 }}>
-                <Animated.Text
-                  style={[
-                    tipAnimatedStyle,
-                    {
+                <Animated.View style={tipAnimatedStyle}>
+                  <Text
+                    style={{
                       color: textSecondary,
                       textAlign: "right",
                       lineHeight: 18,
                       fontSize: 12,
                       fontFamily: "Tajawal_400Regular",
-                    },
-                  ]}
-                >
-                  {visibleTip}
-                </Animated.Text>
+                    }}
+                  >
+                    {visibleTip}
+                  </Text>
+                </Animated.View>
               </View>
             </View>
             <View style={styles.tipImageWrap}>
@@ -1063,6 +1169,37 @@ const styles = StyleSheet.create({
   },
   skeletonLine: {
     borderRadius: 6,
+  },
+  scoreBadge: {
+    minWidth: 26,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  mockBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    marginBottom: 8,
+    gap: 3,
+    opacity: 0.7,
+  },
+  healthEmptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    gap: 0,
+  },
+  retryBtn: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
   },
 
   tipCard: {
