@@ -103,7 +103,7 @@ export default function DoctorsScreen() {
       <Animated.View entering={FadeIn.duration(300)} style={[styles.searchSection, { paddingTop: insets.top + 10 }]}>
         <View style={styles.searchRow}>
           <View style={{ flex: 1 }}>
-            <GlowingSearchBar value={search} onChangeText={setSearch} placeholder="ابحث باسم الطبيب أو التخصص" />
+            <GlowingSearchBar value={search} onChangeText={setSearch} placeholder="ابحث باسم الطبيب" />
           </View>
           <Pressable
             onPress={() => setShowFilters(true)}
