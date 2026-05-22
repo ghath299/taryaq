@@ -979,22 +979,6 @@ function StepInput({
           ]}
         >
           <View style={styles2.nearbyHeader}>
-            <Pressable style={styles2.viewAllBtn}>
-              <ThemedText
-                style={{
-                  color: theme.primaryDark,
-                  fontWeight: "700",
-                  fontSize: 14,
-                }}
-              >
-                عرض الكل
-              </ThemedText>
-              <Feather
-                name="chevron-left"
-                size={16}
-                color={theme.primaryDark}
-              />
-            </Pressable>
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
             >
