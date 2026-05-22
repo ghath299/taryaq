@@ -6,7 +6,6 @@ import {
   Pressable,
   Alert,
   Linking,
-  Switch,
   Modal,
   Platform,
 } from "react-native";
@@ -54,7 +53,6 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { theme, isDark, themeMode, setThemeMode } = useTheme();
   const { user, logout } = useAuth();
-  const [notifEnabled, setNotifEnabled] = useState(true);
   const [aboutVisible, setAboutVisible] = useState(false);
   const [termsVisible, setTermsVisible] = useState(false);
   const [privacyVisible, setPrivacyVisible] = useState(false);
@@ -132,14 +130,6 @@ export default function ProfileScreen() {
           onPress: () => router.push("/bookings"),
         },
         {
-          id: "orders",
-          label: "طلباتي",
-          icon: "package",
-          iconColor: "#F97316",
-          bg: "#FFF1E5",
-          onPress: () => router.push("/orders"),
-        },
-        {
           id: "my-medications",
           label: "أدويتي الدائمة",
           icon: "activity",
@@ -154,15 +144,6 @@ export default function ProfileScreen() {
           iconColor: "#8B5CF6",
           bg: "#EDE9FE",
           onPress: () => router.push("/medication-history"),
-        },
-        {
-          id: "notifications-list",
-          label: "الإشعارات",
-          icon: "bell",
-          iconColor: "#A78BFA",
-          bg: "#F0EBFC",
-          trailingText: "3",
-          onPress: () => router.push("/notifications"),
         },
       ],
     },
@@ -179,22 +160,6 @@ export default function ProfileScreen() {
           trailingText: themeLabel,
           onPress: cycleTheme,
           hideChevron: true,
-        },
-        {
-          id: "notif-toggle",
-          label: "تفعيل الإشعارات",
-          icon: "bell",
-          iconColor: "#F59E0B",
-          bg: "#FEF3D5",
-          hideChevron: true,
-          rightElement: (
-            <Switch
-              value={notifEnabled}
-              onValueChange={setNotifEnabled}
-              trackColor={{ false: "#D1D5DB", true: addAlpha(BRAND_BLUE, 0.45) }}
-              thumbColor={notifEnabled ? BRAND_BLUE : "#F4F6FA"}
-            />
-          ),
         },
       ],
     },

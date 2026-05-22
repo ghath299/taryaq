@@ -55,7 +55,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
-import { useNotificationSetup } from "@/hooks/useNotifications";
+import { useNotificationSetup, requestNotificationPermission } from "@/hooks/useNotifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -100,8 +101,25 @@ const IMAGES_TO_PRELOAD = [
   require("../assets/images/doctor-consultation.png"),
 ];
 
+const FIRST_OPEN_KEY = "@taryaq_notif_requested";
+
 function RootLayoutNav() {
   useNotificationSetup();
+
+  useEffect(() => {
+    async function requestOnFirstOpen() {
+      if (Platform.OS === "web") return;
+      try {
+        const done = await AsyncStorage.getItem(FIRST_OPEN_KEY);
+        if (done) return;
+        await AsyncStorage.setItem(FIRST_OPEN_KEY, "1");
+        await requestNotificationPermission();
+      } catch {
+        // ignore
+      }
+    }
+    requestOnFirstOpen();
+  }, []);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
