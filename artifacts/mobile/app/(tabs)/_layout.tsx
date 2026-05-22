@@ -1,41 +1,34 @@
 import { BlurView } from "expo-blur";
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import React, { useRef, useEffect } from "react";
-import {
-  Platform,
-  StyleSheet,
-  View,
-  TouchableOpacity,
-  Animated,
-} from "react-native";
+import { Platform, StyleSheet, View, Pressable, Animated } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
 // ─── الترتيب: الأطباء | الرئيسية (FAB) | علاج وصيدلية ───────────────────────
 const TABS = [
-  { routeIndex: 1, name: "doctors", label: "الأطباء", icon: "user" as const },
+  { routeIndex: 1, route: "/doctors", label: "الأطباء", icon: "user" as const },
   {
     routeIndex: 0,
-    name: "index",
+    route: "/",
     label: "الرئيسية",
     icon: "home" as const,
     fab: true,
   },
   {
     routeIndex: 2,
-    name: "medicines",
+    route: "/medicines",
     label: "علاج وصيدلية",
     icon: "package" as const,
   },
 ];
 
 // ─── Custom Tab Bar ────────────────────────────────────────────────────────────
-function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+function CustomTabBar({ state }: BottomTabBarProps) {
   const { theme, isDark } = useTheme();
   const isIOS = Platform.OS === "ios";
 
-  // قيمة Animated لكل تاب (0 = غير نشط، 1 = نشط)
   const anims = useRef(
     [0, 1, 2].map((i) => new Animated.Value(state.index === i ? 1 : 0)),
   ).current;
@@ -51,17 +44,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     });
   }, [state.index]);
 
-  const navigateTo = (routeIndex: number) => {
-    const route = state.routes[routeIndex];
-    const isFocused = state.index === routeIndex;
-    const event = navigation.emit({
-      type: "tabPress",
-      target: route.key,
-      canPreventDefault: true,
-    });
-    if (!isFocused && !event.defaultPrevented) {
-      navigation.navigate(route.name);
-    }
+  const navigateTo = (route: string) => {
+    router.navigate(route as any);
   };
 
   const barBg = isIOS ? "transparent" : isDark ? theme.card : "#FFFFFF";
@@ -73,7 +57,6 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         { backgroundColor: barBg, borderTopColor: theme.border },
       ]}
     >
-      {/* iOS blur */}
       {isIOS && (
         <BlurView
           intensity={90}
@@ -87,7 +70,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           const anim = anims[tab.routeIndex];
           const active = state.index === tab.routeIndex;
 
-          // ── FAB (الرئيسية) ────────────────────────────────────────────────
+          // ── FAB (الرئيسية) ──────────────────────────────────────────────────
           if (tab.fab) {
             const fabWidth = anim.interpolate({
               inputRange: [0, 1],
@@ -103,10 +86,10 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             });
 
             return (
-              <View key={tab.name} style={styles.fabWrap}>
-                <TouchableOpacity
-                  onPress={() => navigateTo(tab.routeIndex)}
-                  activeOpacity={0.82}
+              <View key={tab.route} style={styles.fabWrap}>
+                <Pressable
+                  onPress={() => navigateTo(tab.route)}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.82 : 1 }]}
                 >
                   <Animated.View
                     style={[
@@ -115,7 +98,6 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                     ]}
                   >
                     <Feather name={tab.icon} size={22} color="#fff" />
-                    {/* النص يظهر عند التمدد */}
                     <Animated.View
                       style={{ overflow: "hidden", width: textWidth }}
                     >
@@ -128,12 +110,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                       </Animated.Text>
                     </Animated.View>
                   </Animated.View>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             );
           }
 
-          // ── Pill item عادي ────────────────────────────────────────────────
+          // ── Pill item عادي ──────────────────────────────────────────────────
           const pillBg = anim.interpolate({
             inputRange: [0, 1],
             outputRange: [
@@ -151,10 +133,10 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           });
 
           return (
-            <TouchableOpacity
-              key={tab.name}
-              onPress={() => navigateTo(tab.routeIndex)}
-              activeOpacity={0.7}
+            <Pressable
+              key={tab.route}
+              onPress={() => navigateTo(tab.route)}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
             >
               <Animated.View style={[styles.pill, { backgroundColor: pillBg }]}>
                 <Feather
@@ -162,20 +144,23 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                   size={21}
                   color={active ? theme.primary : theme.tabIconDefault}
                 />
-                <Animated.View style={{ overflow: "hidden", width: textWidth }}>
-                  <Animated.Text
-                    style={[
-                      styles.pillLabel,
-                      { opacity: textOpacity, color: theme.primary },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {"  "}
-                    {tab.label}
-                  </Animated.Text>
-                </Animated.View>
+                {/* نفصل الـ overflow عن الـ Animated.View الرئيسي */}
+                <View style={{ overflow: "hidden" }}>
+                  <Animated.View style={{ width: textWidth }}>
+                    <Animated.Text
+                      style={[
+                        styles.pillLabel,
+                        { opacity: textOpacity, color: theme.primary },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {"  "}
+                      {tab.label}
+                    </Animated.Text>
+                  </Animated.View>
+                </View>
               </Animated.View>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -191,7 +176,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     borderTopWidth: 0.5,
-    // safe area للأجهزة التي تحتاج padding سفلي
     paddingBottom: Platform.select({ ios: 24, android: 10, default: 12 }),
   },
   row: {
@@ -202,10 +186,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
 
-  // FAB ──────────────────────────────────────────────────────────────────────
+  // FAB
   fabWrap: {
     alignItems: "center",
-    marginTop: -18, // يرتفع فوق الشريط قليلاً
+    marginTop: -18,
   },
   fab: {
     height: 54,
@@ -223,14 +207,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Pill ─────────────────────────────────────────────────────────────────────
+  // Pill
   pill: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 22,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    overflow: "hidden",
   },
   pillLabel: {
     fontSize: 11,
@@ -269,10 +252,7 @@ export default function TabLayout() {
       {/* index = 0 */}
       <Tabs.Screen
         name="index"
-        options={{
-          title: "الرئيسية",
-          headerShown: false,
-        }}
+        options={{ title: "الرئيسية", headerShown: false }}
       />
 
       {/* index = 1 */}
@@ -288,19 +268,13 @@ export default function TabLayout() {
       {/* index = 2 */}
       <Tabs.Screen
         name="medicines"
-        options={{
-          title: "العلاجات والصيدليات",
-          headerShown: false,
-        }}
+        options={{ title: "العلاجات والصيدليات", headerShown: false }}
       />
 
-      {/* مخفي - لا يظهر بالشريط */}
+      {/* مخفي */}
       <Tabs.Screen
         name="medicine-search"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
+        options={{ href: null, headerShown: false }}
       />
     </Tabs>
   );
