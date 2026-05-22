@@ -33,6 +33,7 @@ import {
   DEFAULT_QUIET_HOURS,
   DEFAULT_PRIVACY,
 } from "@/services/healthSettingsService";
+import { sendTestHealthNotification } from "@/services/smartHealthNotificationService";
 
 const BRAND_BLUE_DEEP = "#1F40C8";
 const BRAND_CYAN = "#5EDFFF";
@@ -167,6 +168,8 @@ export default function HealthSettingsScreen() {
   const [quietHours, setQuietHours] = useState<QuietHours>(DEFAULT_QUIET_HOURS);
   const [privacy, setPrivacy]       = useState<PrivacyPreferences>(DEFAULT_PRIVACY);
   const [loading, setLoading]       = useState(true);
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult]   = useState<{ ok: boolean; msg: string } | null>(null);
 
   const screenBg    = isDark ? "#0A0F1A" : "#F5F7FB";
   const cardBg      = isDark ? "#161B22" : "#FFFFFF";
@@ -233,6 +236,14 @@ export default function HealthSettingsScreen() {
   }, []);
 
   // ── حذف البيانات ─────────────────────────────────────────────────────────────
+  const handleTestNotification = useCallback(async () => {
+    setTestSending(true);
+    setTestResult(null);
+    const result = await sendTestHealthNotification();
+    setTestSending(false);
+    setTestResult({ ok: result.success, msg: result.success ? "تم إرسال التنبيه التجريبي!" : result.reason ?? "فشل الإرسال" });
+  }, []);
+
   const handleDeleteData = () => {
     const msg = "سيتم حذف بيانات الصحة المحفوظة محلياً (الكاش). لن تُحذف إعداداتك.";
     if (Platform.OS === "web") {
@@ -444,7 +455,71 @@ export default function HealthSettingsScreen() {
           </View>
         </Animated.View>
 
-        {/* ── 6. تنبيه طبي ─────────────────────────────────────────────────── */}
+        {/* ── 6. اختبار التنبيهات ───────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(270).duration(400)}>
+          <Text style={[ss.sectionTitle, { color: sectionTitle }]}>اختبار التنبيهات</Text>
+          <View style={[ss.card, { backgroundColor: cardBg, borderColor: border }]}>
+            <View style={{ padding: Spacing.md }}>
+              <Text style={[ss.rowLabel, { color: textPrimary, fontFamily: "Tajawal_500Medium", marginBottom: 6 }]}>
+                إرسال تنبيه تجريبي
+              </Text>
+              <Text style={[ss.rowMeta, { color: textSec, fontFamily: "Tajawal_400Regular", marginBottom: 12 }]}>
+                للتحقق من عمل الإشعارات على جهازك. لا يُرسل بيانات طبية حقيقية.
+              </Text>
+              <Pressable
+                onPress={() => void handleTestNotification()}
+                disabled={testSending}
+                style={({ pressed }) => [
+                  ss.testBtn,
+                  {
+                    backgroundColor: testSending
+                      ? addAlpha(BRAND_BLUE_DEEP, 0.4)
+                      : addAlpha(BRAND_BLUE_DEEP, 0.1),
+                    borderColor: addAlpha(BRAND_BLUE_DEEP, 0.25),
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+              >
+                {testSending ? (
+                  <ActivityIndicator size="small" color={BRAND_BLUE_DEEP} />
+                ) : (
+                  <Feather name="bell" size={15} color={BRAND_BLUE_DEEP} />
+                )}
+                <Text style={[ss.testBtnLabel, { color: BRAND_BLUE_DEEP, fontFamily: "Tajawal_600SemiBold" }]}>
+                  {testSending ? "جارٍ الإرسال..." : "إرسال تنبيه تجريبي"}
+                </Text>
+              </Pressable>
+              {testResult && (
+                <View
+                  style={[
+                    ss.testResult,
+                    {
+                      backgroundColor: testResult.ok
+                        ? addAlpha("#22C55E", 0.1)
+                        : addAlpha("#EF4444", 0.1),
+                      borderColor: testResult.ok
+                        ? addAlpha("#22C55E", 0.3)
+                        : addAlpha("#EF4444", 0.3),
+                    },
+                  ]}
+                >
+                  <Feather
+                    name={testResult.ok ? "check-circle" : "alert-circle"}
+                    size={14}
+                    color={testResult.ok ? "#22C55E" : "#EF4444"}
+                    style={{ marginLeft: 8 }}
+                  />
+                  <Text style={[ss.testResultText, { color: testResult.ok ? "#22C55E" : "#EF4444", fontFamily: "Tajawal_500Medium" }]}>
+                    {testResult.msg}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* ── 7. تنبيه طبي ─────────────────────────────────────────────────── */}
         <Animated.View entering={FadeInDown.delay(300).duration(400)}>
           <View style={[ss.disclaimerCard, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, isDark ? 0.12 : 0.06), borderColor: addAlpha(BRAND_BLUE_DEEP, 0.18) }]}>
             <Feather name="info" size={16} color={BRAND_BLUE_DEEP} style={{ marginLeft: 10, marginTop: 2 }} />
@@ -579,4 +654,27 @@ const ss = StyleSheet.create({
     marginTop: Spacing.lg,
   },
   disclaimerText: { flex: 1, fontSize: 12.5, lineHeight: 20, textAlign: "right" },
+
+  // Test notification section
+  testBtn: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  testBtnLabel: { fontSize: 14, fontWeight: "600" },
+  testResult: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+    gap: 6,
+  },
+  testResultText: { fontSize: 13, flex: 1, textAlign: "right" },
 });

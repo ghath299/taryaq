@@ -42,6 +42,7 @@ import {
   loadHealthCache,
   type HealthSummary,
 } from "@/services/healthDataService";
+import { checkAndSendSmartHealthNotification } from "@/services/smartHealthNotificationService";
 import {
   getSmartHealthTip,
   getActivityLabel,
@@ -151,6 +152,7 @@ export default function HomeScreen() {
   }));
 
   const pulseStarted = useRef(false);
+  const notifChecked = useRef(false);
 
   const applyHealthData = useCallback(
     (data: HealthSummary) => {
@@ -186,6 +188,7 @@ export default function HomeScreen() {
       .then(async (data) => {
         applyHealthData(data);
         await saveHealthCache(data);
+        void checkAndSendSmartHealthNotification(data);
       })
       .catch(() => {
         setHealthError(true);
@@ -203,6 +206,10 @@ export default function HomeScreen() {
       .then(async (data) => {
         applyHealthData(data);
         await saveHealthCache(data);
+        if (!notifChecked.current) {
+          notifChecked.current = true;
+          void checkAndSendSmartHealthNotification(data);
+        }
       })
       .catch(() => {
         setHealthError(true);
