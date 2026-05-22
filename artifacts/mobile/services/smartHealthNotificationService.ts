@@ -26,6 +26,7 @@ type AlertType =
   | "heart_rate_low"
   | "sleep_low"
   | "activity_low"
+  | "oxygen_low"          // يحتاج HealthSummary.oxygen عند إضافته
   | "blood_pressure_high"
   | "blood_pressure_low"
   | "daily_summary"
@@ -66,6 +67,10 @@ const ALERT_CONTENT: Record<AlertType, { title: string; body: string }> = {
   blood_pressure_low: {
     title: "مؤشر الضغط منخفض قليلاً",
     body: "ضغطك منخفض قليلاً. اشرب ماء كافياً واحرص على وجبات منتظمة.",
+  },
+  oxygen_low: {
+    title: "مؤشر الأوكسجين يستحق الانتباه",
+    body: "مستوى الأوكسجين لديك يحتاج انتباهاً. تنفّس بعمق وراقب حالتك. إذا استمرت الأعراض راجع مختصاً.",
   },
   daily_summary: {
     title: "ملخص صحتك اليوم",
@@ -178,7 +183,18 @@ function pickAlertType(
     return "heart_rate_low";
   }
 
-  // 2. ضغط الدم
+  // 2. الأوكسجين — يتحقق ديناميكياً إذا توفرت البيانات مستقبلاً في HealthSummary
+  const oxygenVal = (data as unknown as { oxygen?: number | null }).oxygen;
+  if (
+    typeof oxygenVal === "number" &&
+    oxygenVal < 94 &&
+    prefs.oxygen &&
+    ok("oxygen_low")
+  ) {
+    return "oxygen_low";
+  }
+
+  // 3. ضغط الدم
   if (data.bloodPressure.status === "high" && prefs.bloodPressure && ok("blood_pressure_high")) {
     return "blood_pressure_high";
   }
@@ -186,7 +202,7 @@ function pickAlertType(
     return "blood_pressure_low";
   }
 
-  // 3. النوم — أقل من 75% من الهدف
+  // 4. النوم — أقل من 75% من الهدف
   if (
     data.sleep.hours !== null &&
     data.sleep.hours < goals.sleepGoal * 0.75 &&
@@ -196,7 +212,7 @@ function pickAlertType(
     return "sleep_low";
   }
 
-  // 4. النشاط — أقل من 50% من هدف الخطوات
+  // 5. النشاط — أقل من 50% من هدف الخطوات
   if (
     data.activity.steps !== null &&
     data.activity.steps < goals.stepsGoal * 0.5 &&
@@ -204,6 +220,11 @@ function pickAlertType(
     ok("activity_low")
   ) {
     return "activity_low";
+  }
+
+  // 6. ملخص يومي — كخيار أخير إذا مُفعَّل ولم يُرسَل مؤخراً
+  if (prefs.dailySummary && ok("daily_summary")) {
+    return "daily_summary";
   }
 
   return null;
@@ -251,7 +272,9 @@ export async function checkAndSendSmartHealthNotification(
   if (todayCount >= MAX_DAILY) return;
 
   // إذا كل التنبيهات مغلقة
-  const anyEnabled = prefs.heartRate || prefs.sleep || prefs.activity || prefs.bloodPressure;
+  const anyEnabled =
+    prefs.heartRate || prefs.sleep || prefs.activity ||
+    prefs.bloodPressure || prefs.oxygen || prefs.dailySummary;
   if (!anyEnabled) return;
 
   // سجل التنبيهات السابقة
