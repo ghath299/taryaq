@@ -26,7 +26,7 @@ type AlertType =
   | "heart_rate_low"
   | "sleep_low"
   | "activity_low"
-  | "oxygen_low"          // يحتاج HealthSummary.oxygen عند إضافته
+  | "oxygen_low"          // يعتمد على data.spo2.latest أو data.spo2.average
   | "blood_pressure_high"
   | "blood_pressure_low"
   | "daily_summary"
@@ -183,8 +183,8 @@ function pickAlertType(
     return "heart_rate_low";
   }
 
-  // 2. الأوكسجين — يتحقق ديناميكياً إذا توفرت البيانات مستقبلاً في HealthSummary
-  const oxygenVal = (data as unknown as { oxygen?: number | null }).oxygen;
+  // 2. الأوكسجين — يعمل فقط إذا توفرت بيانات spo2 فعلاً في HealthSummary
+  const oxygenVal = data.spo2?.latest ?? data.spo2?.average ?? null;
   if (
     typeof oxygenVal === "number" &&
     oxygenVal < 94 &&

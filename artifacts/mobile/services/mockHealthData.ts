@@ -6,6 +6,8 @@ export const DEV_MOCK_HEALTH: HealthSummary = {
   bloodPressure: { systolic: 120, diastolic: 80, status: "normal" },
   activity: { level: "moderate", steps: 4200, activeMinutes: 28 },
   sleep: { hours: 6.5, quality: "fair" },
+  // spo2 تجريبي: قيمة منخفضة (91%) لاختبار oxygen_low في DEV
+  spo2: { latest: 91, average: 92, status: "low" },
   score: 68,
   isConnected: false,
   source: "mock",

@@ -48,6 +48,16 @@ export function getSmartHealthTip(data: HealthSummary, goals?: HealthGoals): str
     candidates.push("ضغط الدم لديك منخفض قليلاً. اشرب ماء كافياً واحرص على وجبات منتظمة.");
   }
 
+  // SpO2 — فقط إذا توفرت البيانات
+  if (data.spo2) {
+    const spo2Val = data.spo2.latest ?? data.spo2.average ?? null;
+    if (typeof spo2Val === "number" && spo2Val < 94) {
+      candidates.push("مستوى الأوكسجين في دمك يستحق الانتباه. تنفّس بعمق وراقب حالتك.");
+    } else if (data.spo2.status === "low" || data.spo2.status === "warning") {
+      candidates.push("مستوى الأوكسجين يحتاج انتباهاً. راقب حالتك وتنفّس بعمق.");
+    }
+  }
+
   // كل شيء جيد
   if (candidates.length === 0) {
     if (data.score >= 80) {

@@ -9,6 +9,7 @@ export type BPStatus = "normal" | "high" | "low" | "unavailable";
 export type ActivityLevel = "low" | "moderate" | "good" | "excellent";
 export type SleepQuality = "poor" | "fair" | "good" | "excellent" | "unavailable";
 export type DataSource = "mock" | "healthkit" | "healthconnect" | "none";
+export type Spo2Status = "normal" | "low" | "warning" | "unknown";
 
 export interface HealthSummary {
   heartRate: { value: number | null; status: HeartRateStatus };
@@ -23,6 +24,12 @@ export interface HealthSummary {
     activeMinutes: number | null;
   };
   sleep: { hours: number | null; quality: SleepQuality };
+  // SpO2 — اختياري: يُملأ عند توفر Health Connect / HealthKit
+  spo2?: {
+    latest?: number | null;
+    average?: number | null;
+    status?: Spo2Status;
+  };
   score: number;
   isConnected: boolean;
   source: DataSource;
@@ -49,7 +56,7 @@ export function normalizeHealthSummary(
     source: "none",
   };
   if (!raw) return EMPTY;
-  return {
+  const normalized: HealthSummary = {
     heartRate: {
       value: typeof raw.heartRate?.value === "number" ? raw.heartRate.value : null,
       status: raw.heartRate?.status ?? "unavailable",
@@ -72,6 +79,15 @@ export function normalizeHealthSummary(
     isConnected: raw.isConnected === true,
     source: raw.source ?? "none",
   };
+  // spo2 اختياري: يُضاف فقط إذا كانت البيانات موجودة
+  if (raw.spo2 !== undefined) {
+    normalized.spo2 = {
+      latest:  typeof raw.spo2?.latest  === "number" ? raw.spo2.latest  : null,
+      average: typeof raw.spo2?.average === "number" ? raw.spo2.average : null,
+      status:  raw.spo2?.status ?? "unknown",
+    };
+  }
+  return normalized;
 }
 
 // ── AsyncStorage: حفظ وتحميل آخر بيانات ─────────────────────────────────────
