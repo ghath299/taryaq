@@ -233,7 +233,7 @@ export async function readTodayHealthConnectSummary(): Promise<HealthSummary | n
         : {}),
       score,
       isConnected: true,
-      source: "healthconnect",
+      source: "health_connect",
     };
 
     return summary;

@@ -16,7 +16,7 @@ export type HeartRateStatus = "normal" | "high" | "low" | "unavailable";
 export type BPStatus = "normal" | "high" | "low" | "unavailable";
 export type ActivityLevel = "low" | "moderate" | "good" | "excellent";
 export type SleepQuality = "poor" | "fair" | "good" | "excellent" | "unavailable";
-export type DataSource = "mock" | "healthkit" | "healthconnect" | "none";
+export type DataSource = "mock" | "healthkit" | "health_connect" | "none";
 export type Spo2Status = "normal" | "low" | "warning" | "unknown";
 
 export interface HealthSummary {
