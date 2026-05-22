@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "ترياق",
+    "slug": "taryaq",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./artifacts/mobile/assets/images/icon2.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./artifacts/mobile/assets/images/icon2.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1117"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "config": {
+        "googleMapsApiKey": ""
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
+        "LSApplicationQueriesSchemes": ["baly", "waze"]
+      }
+    },
+    "android": {
+      "package": "com.taryaq.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./artifacts/mobile/assets/images/icon2.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      ["expo-router", {"origin": "https://replit.com/"}],
+      "expo-font",
+      "expo-web-browser",
+      ["expo-location", {"locationWhenInUsePermission": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك"}],
+      ["expo-notifications", {"icon": "./artifacts/mobile/assets/images/icon2.png", "color": "#5EDFFF", "sounds": []}],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "dd439c51-50a6-4f27-b1cf-873da66913a0"
+      }
+    }
+  }
+}
