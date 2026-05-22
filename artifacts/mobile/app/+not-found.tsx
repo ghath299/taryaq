@@ -10,8 +10,8 @@ export default function NotFoundScreen() {
   return (
     <>
       <Stack.Screen options={{ title: "Oops!" }} />
-      <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
+      <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.backgroundRoot }]}>
+        <Text style={[styles.title, { color: colors.text }]}>
           This screen doesn&apos;t exist.
         </Text>
 

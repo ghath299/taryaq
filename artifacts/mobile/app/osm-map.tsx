@@ -87,6 +87,7 @@
                                const [navManeuverType, setNavManeuverType] = useState<string>("straight");
                                const [isCameraFollowing, setIsCameraFollowing] = useState(true);
                                const locationSub = useRef<any>(null);
+                               const mapRef = useRef<any>(null);
                                const colorScheme = useColorScheme();
                                const isDark = colorScheme === "dark";
 
@@ -882,7 +883,7 @@
                                  height: 7,
                                  borderRadius: 4,
                                },
-                               statusText: { fontSize: 12, fontWeight: "700" },
+                               statusText: { fontSize: 12, fontWeight: "700", color: "#E2E8F0" },
                                pharmacyRating: { color: "#FCD34D", fontSize: 13, fontWeight: "700" },
                                pharmacyDist: { color: "#94A3B8", fontSize: 12, fontWeight: "600" },
                                pharmacyHoursRow: {
@@ -988,8 +989,6 @@
                                  shadowOffset: { width: 0, height: 2 },
                                  elevation: 2,
                                },
-                               statusText: { color: "#E2E8F0" },
-
                                recenterBtn: {
                                  position: "absolute",
                                  bottom: 110,

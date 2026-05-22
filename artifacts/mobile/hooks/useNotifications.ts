@@ -156,8 +156,8 @@ export function useNotificationSetup() {
     });
 
     return () => {
-      if (notifListener.current) Notifications.removeNotificationSubscription(notifListener.current);
-      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
+      if (notifListener.current) notifListener.current.remove();
+      if (responseListener.current) responseListener.current.remove();
     };
   }, []);
 }

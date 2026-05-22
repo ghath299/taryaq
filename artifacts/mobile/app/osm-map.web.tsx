@@ -1,13 +1,13 @@
 import { View, StyleSheet } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 
 export default function OsmMapWeb() {
   const { theme } = useTheme();
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <MaterialCommunityIcons name="map-off" size={56} color={theme.textSecondary} />
+      <Feather name="map-pin" size={56} color={theme.textSecondary} />
       <ThemedText type="h3" style={{ color: theme.text, marginTop: 16, fontWeight: "700" }}>
         الخريطة غير متاحة
       </ThemedText>
@@ -19,5 +19,10 @@ export default function OsmMapWeb() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
 });

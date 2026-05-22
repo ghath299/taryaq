@@ -40,7 +40,7 @@ export function ThemedText({
   };
 
   const getFontFamily = () => {
-    const weight = getTypeStyle().fontWeight;
+    const weight: string = getTypeStyle().fontWeight ?? "";
     if (weight === "800") return "Cairo-ExtraBold";
     if (weight === "700") return "Cairo-Bold";
     if (weight === "600") return "Cairo-SemiBold";

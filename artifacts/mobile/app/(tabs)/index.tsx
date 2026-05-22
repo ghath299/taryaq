@@ -25,6 +25,7 @@ import Animated, {
   withSequence,
   Easing,
   runOnJS,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
@@ -209,6 +210,14 @@ export default function HomeScreen() {
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // ── إلغاء الأنيميشن عند unmount لمنع memory leak ────────────────────────────
+  useEffect(() => {
+    return () => {
+      cancelAnimation(heartScale);
+      cancelAnimation(barWidth);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // ──────────────────────────────────────────────────────────────────────────
 
   // ── Rotating Tips ──────────────────────────────────────────────────────────
@@ -233,10 +242,7 @@ export default function HomeScreen() {
     });
   }, [tipIndex, tipOpacity, tipTranslateY]);
 
-  useEffect(() => {
-    const interval = setInterval(advanceTip, 3500 + Math.random() * 1500);
-    return () => clearInterval(interval);
-  }, [advanceTip]);
+  // النصيحة لا تتغير تلقائياً — تُحدَّث فقط عند فتح التطبيق أو تحميل البيانات الصحية
 
   const tipAnimatedStyle = useAnimatedStyle(() => ({
     opacity: tipOpacity.value,
