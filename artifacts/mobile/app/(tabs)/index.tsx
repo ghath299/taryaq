@@ -43,7 +43,7 @@ const adsSlides: AdSlide[] = [
   {
     id: "ad-doctor",
     title: "احجز طبيبك خلال\nثواني",
-    subtitle: "أو ابحث عن دواء قريب منك",
+    subtitle: "أو ابحث عن طبيب قريب منك",
     ctaLabel: "ابدأ الآن",
     ctaRoute: "/(tabs)/doctors",
     image: require("@/assets/images/banner-phone.png"),
@@ -216,13 +216,13 @@ export default function HomeScreen() {
             ]}
             onPress={() => router.push("/search")}
             accessibilityRole="search"
-            accessibilityLabel="ابحث عن طبيب، دواء، أو صيدلية"
+            accessibilityLabel="ابحث عن طبيب"
           >
             <Feather name="search" size={18} color={textSecondary} />
             <TextInput
               value={searchValue}
               onChangeText={setSearchValue}
-              placeholder="ابحث عن طبيب، دواء، أو صيدلية..."
+              placeholder="ابحث عن طبيب..."
               placeholderTextColor={textSecondary}
               style={[styles.searchInput, { color: textPrimary }]}
               onFocus={() => router.push("/search")}
