@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -13,7 +13,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeIn, FadeInDown, FadeInUp } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  runOnJS,
+} from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import EmergencyModal from "@/components/EmergencyModal";
@@ -22,6 +31,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { doctors as mockDoctors } from "@/data/mockData";
 import { Spacing, addAlpha } from "@/constants/colors";
+import { getRandomTips } from "@/data/healthTips";
 
 const BRAND_BLUE = "#2A4FCC";
 const BRAND_BLUE_DEEP = "#1F40C8";
@@ -101,6 +111,39 @@ export default function HomeScreen() {
   const router = useRouter();
   const [emergencyVisible, setEmergencyVisible] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+
+  // ── Rotating Tips ──────────────────────────────────────────────────────────
+  const sessionTips = useRef<string[]>(getRandomTips(10));
+  const [tipIndex, setTipIndex] = useState(0);
+  const [visibleTip, setVisibleTip] = useState(sessionTips.current[0]);
+  const tipOpacity = useSharedValue(1);
+  const tipTranslateY = useSharedValue(0);
+
+  const advanceTip = useCallback(() => {
+    const next = (tipIndex + 1) % sessionTips.current.length;
+    // Fade + slide out
+    tipOpacity.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.ease) });
+    tipTranslateY.value = withTiming(-12, { duration: 350, easing: Easing.out(Easing.ease) }, () => {
+      runOnJS(setVisibleTip)(sessionTips.current[next]);
+      runOnJS(setTipIndex)(next);
+      // Snap to below, then fade + slide in
+      tipTranslateY.value = 14;
+      tipOpacity.value = 0;
+      tipOpacity.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) });
+      tipTranslateY.value = withTiming(0, { duration: 400, easing: Easing.out(Easing.ease) });
+    });
+  }, [tipIndex, tipOpacity, tipTranslateY]);
+
+  useEffect(() => {
+    const interval = setInterval(advanceTip, 3500 + Math.random() * 1500);
+    return () => clearInterval(interval);
+  }, [advanceTip]);
+
+  const tipAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: tipOpacity.value,
+    transform: [{ translateY: tipTranslateY.value }],
+  }));
+  // ──────────────────────────────────────────────────────────────────────────
 
   const firstName = user?.fullName?.split(" ")[0] ?? "صديقي";
   const cardBg = isDark ? theme.card : "#FFFFFF";
@@ -548,18 +591,22 @@ export default function HomeScreen() {
                 </ThemedText>
                 <Feather name="zap" size={14} color="#FFB800" />
               </View>
-              <ThemedText
-                type="caption"
-                style={{
-                  color: textSecondary,
-                  textAlign: "right",
-                  lineHeight: 18,
-                  marginTop: 6,
-                  fontSize: 12,
-                }}
-              >
-                شرب الماء بانتظام يساعد على تحسين نشاطك وصحتك العامة
-              </ThemedText>
+              <View style={{ overflow: "hidden", marginTop: 6 }}>
+                <Animated.Text
+                  style={[
+                    tipAnimatedStyle,
+                    {
+                      color: textSecondary,
+                      textAlign: "right",
+                      lineHeight: 18,
+                      fontSize: 12,
+                      fontFamily: "Tajawal_400Regular",
+                    },
+                  ]}
+                >
+                  {visibleTip}
+                </Animated.Text>
+              </View>
             </View>
             <View style={styles.tipImageWrap}>
               <Image
