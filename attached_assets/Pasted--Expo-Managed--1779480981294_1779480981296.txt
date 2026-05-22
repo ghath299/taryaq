@@ -1,0 +1,59 @@
+نعم، موافق على المتابعة، لكن قبل التنفيذ عدّل نقطة مهمة:
+
+المشروع Expo Managed، لذلك لا تعتمد فقط على react-native-health-connect كإضافة مباشرة.
+حسب توثيق المكتبة، في Expo يجب استخدام:
+- expo-health-connect كـ config plugin
+- expo-build-properties
+- expo-dev-client لأن الربط لا يعمل داخل Expo Go ويحتاج Development Build
+
+استخدم pnpm فقط.
+
+المطلوب قبل التنفيذ:
+1. تأكد من التثبيت الصحيح لـ Expo Managed:
+   pnpm add expo-health-connect expo-dev-client
+   pnpm add -D expo-build-properties
+
+2. لا تثبت react-native-health-connect بشكل منفصل إلا إذا expo-health-connect لا يوفّر الـ imports المطلوبة أو يحتاجه كـ dependency.
+افحص package docs والـ TypeScript imports قبل كتابة adapter.
+
+3. في app.json أو app.config.js:
+- لا تعدل الملفين عشوائياً.
+- بما أن app.config.js يمدد app.json، تأكد أن التعديل النهائي يظهر في config النهائي.
+- أضف plugin:
+  "expo-health-connect"
+- أضف expo-build-properties مع:
+  minSdkVersion: 26
+  compileSdkVersion و targetSdkVersion المناسبين لإصدار Expo SDK الحالي.
+
+4. أضف Android permissions للقراءة فقط:
+- android.permission.health.READ_STEPS
+- android.permission.health.READ_HEART_RATE
+- android.permission.health.READ_RESTING_HEART_RATE
+- android.permission.health.READ_SLEEP
+- android.permission.health.READ_OXYGEN_SATURATION
+- android.permission.health.READ_BLOOD_PRESSURE
+- android.permission.health.READ_TOTAL_CALORIES_BURNED
+- android.permission.health.READ_ACTIVE_CALORIES_BURNED
+
+5. لا تضف WRITE permissions حالياً.
+نحن نقرأ فقط ولا نكتب بيانات صحية.
+
+6. نفذ Phase 4 كما في الخطة:
+- healthConnectAdapter.ts
+- ربط healthDataService
+- تفعيل HealthPermissionModal
+- إضافة أزرار Health Connect داخل إعدادات الصحة
+- المحافظة على Web Preview بالـ mock
+- المحافظة على TypeScript = 0
+
+7. بعد التنفيذ لا تكتفي بـ Web Preview.
+جهّز EAS Development Build Android:
+eas build --profile development --platform android
+
+8. التقرير النهائي يجب أن يوضح:
+- هل expo-health-connect اشتغل؟
+- هل احتاج react-native-health-connect كاعتماد إضافي أم لا؟
+- هل permissions ظهرت؟
+- هل زر ربط الساعة يفتح طلب صلاحيات Health Connect؟
+- هل healthDataService يرجع source = health_connect عند النجاح؟
+- هل TypeScript بقي 0 errors؟

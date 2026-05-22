@@ -1,8 +1,16 @@
 // HealthData Service — يُعيد بيانات HealthSummary موحّدة
-// المصادر المستقبلية: Health Connect (Android) / HealthKit (iOS)
-// تحتاج هذه المصادر إلى Development Build وليس Expo Go
+// Android: Health Connect (react-native-health-connect) — يحتاج Development Build
+// iOS:     HealthKit — غير مفعّل بعد
+// Web:     Mock دائماً
 
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  isHealthConnectAvailable,
+  initializeHealthConnect,
+  getGrantedHealthPermissions,
+  readTodayHealthConnectSummary,
+} from "./healthConnectAdapter";
 
 export type HeartRateStatus = "normal" | "high" | "low" | "unavailable";
 export type BPStatus = "normal" | "high" | "low" | "unavailable";
@@ -146,18 +154,60 @@ export function isHealthConnected(data: HealthSummary): boolean {
   return data.isConnected && data.source !== "mock" && data.source !== "none";
 }
 
-// ── جلب البيانات الصحية ───────────────────────────────────────────────────────
-// حالياً: mock data فقط
-// مستقبلاً: Platform.OS === 'android' → Health Connect | 'ios' → HealthKit
-export async function fetchHealthSummary(): Promise<HealthSummary> {
-  // TODO (Phase 2): تفعيل Health Connect على Android
-  //   يحتاج: react-native-health-connect + Development Build
-  //   import { readRecords } from 'react-native-health-connect';
-  //
-  // TODO (Phase 2): تفعيل HealthKit على iOS
-  //   يحتاج: react-native-health + Development Build
-  //   import AppleHealthKit from 'react-native-health';
+// ── Mock / Fallback فارغ ──────────────────────────────────────────────────────
+const EMPTY_SUMMARY: HealthSummary = {
+  heartRate:     { value: null, status: "unavailable" },
+  bloodPressure: { systolic: null, diastolic: null, status: "unavailable" },
+  activity:      { level: "moderate", steps: null, activeMinutes: null },
+  sleep:         { hours: null, quality: "unavailable" },
+  score: 0,
+  isConnected: false,
+  source: "none",
+};
 
+async function getMockSummary(): Promise<HealthSummary> {
   const { DEV_MOCK_HEALTH } = await import("./mockHealthData");
   return normalizeHealthSummary(DEV_MOCK_HEALTH);
+}
+
+// ── جلب البيانات الصحية ───────────────────────────────────────────────────────
+export async function fetchHealthSummary(): Promise<HealthSummary> {
+  // Web: mock دائماً (Expo Web Preview)
+  if (Platform.OS === "web") {
+    return getMockSummary();
+  }
+
+  // iOS: HealthKit غير مفعّل بعد
+  if (Platform.OS === "ios") {
+    if (__DEV__) return getMockSummary();
+    return { ...EMPTY_SUMMARY };
+  }
+
+  // Android: حاول Health Connect أولاً
+  try {
+    const available = await isHealthConnectAvailable();
+
+    if (!available) {
+      // Health Connect غير متوفر (جهاز قديم أو لم يُثبَّت)
+      if (__DEV__) return getMockSummary();
+      return { ...EMPTY_SUMMARY };
+    }
+
+    await initializeHealthConnect();
+
+    const granted = await getGrantedHealthPermissions();
+    if (granted.length === 0) {
+      // لم تُمنح صلاحيات بعد — في DEV نعرض بيانات تجريبية
+      if (__DEV__) return getMockSummary();
+      return { ...EMPTY_SUMMARY };
+    }
+
+    const data = await readTodayHealthConnectSummary();
+    if (data) return data;
+  } catch {
+    // أي خطأ غير متوقع → نعود للـ fallback
+  }
+
+  if (__DEV__) return getMockSummary();
+  return { ...EMPTY_SUMMARY };
 }

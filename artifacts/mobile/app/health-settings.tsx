@@ -34,6 +34,13 @@ import {
   DEFAULT_PRIVACY,
 } from "@/services/healthSettingsService";
 import { sendTestHealthNotification } from "@/services/smartHealthNotificationService";
+import {
+  isHealthConnectAvailable,
+  initializeHealthConnect,
+  requestHealthConnectPermissions,
+  getGrantedHealthPermissions,
+  openHealthConnectSettingsScreen,
+} from "@/services/healthConnectAdapter";
 
 const BRAND_BLUE_DEEP = "#1F40C8";
 const BRAND_CYAN = "#5EDFFF";
@@ -171,6 +178,12 @@ export default function HealthSettingsScreen() {
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult]   = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // ── Health Connect state ──────────────────────────────────────────────────
+  const [hcAvailable, setHcAvailable] = useState<boolean | null>(null);
+  const [hcGranted,   setHcGranted]   = useState<string[]>([]);
+  const [hcChecking,  setHcChecking]  = useState(false);
+  const [hcMsg,       setHcMsg]       = useState<{ ok: boolean; text: string } | null>(null);
+
   const screenBg    = isDark ? "#0A0F1A" : "#F5F7FB";
   const cardBg      = isDark ? "#161B22" : "#FFFFFF";
   const border      = isDark ? "#21262D" : "#EFEFEF";
@@ -188,6 +201,66 @@ export default function HealthSettingsScreen() {
         setPrivacy(s.privacy);
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  // ── فحص Health Connect عند فتح الشاشة (Android فقط) ─────────────────────
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    setHcChecking(true);
+    isHealthConnectAvailable()
+      .then(async (available) => {
+        setHcAvailable(available);
+        if (available) {
+          await initializeHealthConnect();
+          const granted = await getGrantedHealthPermissions();
+          setHcGranted(granted);
+        }
+      })
+      .catch(() => setHcAvailable(false))
+      .finally(() => setHcChecking(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── طلب صلاحيات HC ────────────────────────────────────────────────────────
+  const handleRequestHCPerms = useCallback(async () => {
+    setHcChecking(true);
+    setHcMsg(null);
+    try {
+      const ok = await requestHealthConnectPermissions();
+      if (ok) {
+        const granted = await getGrantedHealthPermissions();
+        setHcGranted(granted);
+        setHcMsg({ ok: true, text: `تم منح ${granted.length} صلاحية` });
+      } else {
+        setHcMsg({ ok: false, text: "لم تُمنح الصلاحيات — افتح إعدادات HC للسماح يدوياً" });
+      }
+    } catch {
+      setHcMsg({ ok: false, text: "خطأ أثناء طلب الصلاحيات" });
+    } finally {
+      setHcChecking(false);
+    }
+  }, []);
+
+  // ── إعادة فحص HC ──────────────────────────────────────────────────────────
+  const handleRecheckHC = useCallback(async () => {
+    setHcChecking(true);
+    setHcMsg(null);
+    try {
+      const available = await isHealthConnectAvailable();
+      setHcAvailable(available);
+      if (available) {
+        await initializeHealthConnect();
+        const granted = await getGrantedHealthPermissions();
+        setHcGranted(granted);
+        setHcMsg({ ok: true, text: available ? "Health Connect متاح" : "غير متاح" });
+      } else {
+        setHcMsg({ ok: false, text: "Health Connect غير متاح على هذا الجهاز" });
+      }
+    } catch {
+      setHcMsg({ ok: false, text: "تعذّر الفحص" });
+    } finally {
+      setHcChecking(false);
+    }
   }, []);
 
   // ── تحديث الأهداف ─────────────────────────────────────────────────────────────
@@ -301,17 +374,37 @@ export default function HealthSettingsScreen() {
         <Animated.View entering={FadeInDown.delay(0).duration(400)}>
           <Text style={[ss.sectionTitle, { color: sectionTitle }]}>حالة الربط</Text>
           <View style={[ss.card, { backgroundColor: cardBg, borderColor: border }]}>
+
+            {/* ── الحالة ─────────────────────────────────────────────────── */}
             <View style={[ss.statusRow, { borderBottomColor: border }]}>
-              <View style={[ss.statusDot, { backgroundColor: "#9CA3AF" }]} />
+              {hcChecking ? (
+                <ActivityIndicator size="small" color={BRAND_BLUE_DEEP} style={{ marginLeft: 8 }} />
+              ) : (
+                <View style={[ss.statusDot, {
+                  backgroundColor:
+                    hcAvailable === null  ? "#9CA3AF"
+                    : hcAvailable && hcGranted.length > 0 ? "#22C55E"
+                    : hcAvailable         ? "#F97316"
+                    : "#EF4444",
+                }]} />
+              )}
               <View style={ss.statusTextWrap}>
                 <Text style={[ss.rowLabel, { color: textPrimary, fontFamily: "Tajawal_500Medium" }]}>
                   الحالة
                 </Text>
                 <Text style={[ss.rowMeta, { color: textSec, fontFamily: "Tajawal_400Regular" }]}>
-                  بيانات تجريبية
+                  {Platform.OS !== "android"
+                    ? (Platform.OS === "ios" ? "iOS — HealthKit غير مفعّل بعد" : "ويب / محاكي — بيانات تجريبية")
+                    : hcChecking         ? "جارٍ الفحص…"
+                    : hcAvailable === null ? "لم يُفحص بعد"
+                    : hcAvailable && hcGranted.length > 0 ? `مرتبط — ${hcGranted.length} صلاحية`
+                    : hcAvailable         ? "متاح — لم تُمنح صلاحيات بعد"
+                    : "Health Connect غير متوفر"}
                 </Text>
               </View>
             </View>
+
+            {/* ── المصدر ─────────────────────────────────────────────────── */}
             <View style={[ss.statusRow, { borderBottomColor: border }]}>
               <Feather name="cpu" size={16} color={textSec} style={{ marginLeft: 8 }} />
               <View style={ss.statusTextWrap}>
@@ -319,22 +412,92 @@ export default function HealthSettingsScreen() {
                   المصدر الحالي
                 </Text>
                 <Text style={[ss.rowMeta, { color: textSec, fontFamily: "Tajawal_400Regular" }]}>
-                  بيانات تجريبية للمعاينة
+                  {Platform.OS === "android" && hcAvailable && hcGranted.length > 0
+                    ? "Health Connect (بيانات حقيقية)"
+                    : Platform.OS === "android" && hcAvailable
+                    ? "Health Connect (بدون صلاحيات)"
+                    : "بيانات تجريبية للمعاينة"}
                 </Text>
               </View>
             </View>
-            <Pressable
-              style={({ pressed }) => [
-                ss.actionBtn,
-                { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1), opacity: pressed ? 0.7 : 1 },
-              ]}
-              accessibilityRole="button"
-            >
-              <Feather name="link" size={15} color={BRAND_BLUE_DEEP} />
-              <Text style={[ss.actionBtnLabel, { color: BRAND_BLUE_DEEP, fontFamily: "Tajawal_600SemiBold" }]}>
-                ربط البيانات الصحية
-              </Text>
-            </Pressable>
+
+            {/* ── رسالة الحالة ───────────────────────────────────────────── */}
+            {hcMsg && (
+              <View style={[ss.hcMsgRow, {
+                backgroundColor: hcMsg.ok ? addAlpha("#22C55E", 0.08) : addAlpha("#EF4444", 0.08),
+                borderColor:     hcMsg.ok ? addAlpha("#22C55E", 0.25) : addAlpha("#EF4444", 0.25),
+              }]}>
+                <Feather
+                  name={hcMsg.ok ? "check-circle" : "alert-circle"}
+                  size={13}
+                  color={hcMsg.ok ? "#22C55E" : "#EF4444"}
+                  style={{ marginLeft: 6 }}
+                />
+                <Text style={[ss.hcMsgText, { color: hcMsg.ok ? "#22C55E" : "#EF4444", fontFamily: "Tajawal_400Regular" }]}>
+                  {hcMsg.text}
+                </Text>
+              </View>
+            )}
+
+            {/* ── أزرار Android ──────────────────────────────────────────── */}
+            {Platform.OS === "android" ? (
+              <>
+                {hcAvailable && (
+                  <Pressable
+                    onPress={() => void handleRequestHCPerms()}
+                    disabled={hcChecking}
+                    style={({ pressed }) => [
+                      ss.actionBtn,
+                      { backgroundColor: addAlpha(BRAND_BLUE_DEEP, hcChecking ? 0.05 : 0.1), opacity: pressed ? 0.7 : 1 },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    {hcChecking ? (
+                      <ActivityIndicator size="small" color={BRAND_BLUE_DEEP} />
+                    ) : (
+                      <Feather name="shield" size={15} color={BRAND_BLUE_DEEP} />
+                    )}
+                    <Text style={[ss.actionBtnLabel, { color: BRAND_BLUE_DEEP, fontFamily: "Tajawal_600SemiBold" }]}>
+                      {hcGranted.length > 0 ? "تحديث الصلاحيات" : "طلب صلاحيات القراءة"}
+                    </Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={() => void openHealthConnectSettingsScreen()}
+                  style={({ pressed }) => [
+                    ss.actionBtn,
+                    { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.06), opacity: pressed ? 0.7 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <Feather name="external-link" size={15} color={BRAND_BLUE_DEEP} />
+                  <Text style={[ss.actionBtnLabel, { color: BRAND_BLUE_DEEP, fontFamily: "Tajawal_600SemiBold" }]}>
+                    إعدادات Health Connect
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleRecheckHC()}
+                  disabled={hcChecking}
+                  style={({ pressed }) => [
+                    ss.actionBtn,
+                    { backgroundColor: addAlpha("#6B7280", 0.07), opacity: pressed ? 0.7 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <Feather name="refresh-cw" size={14} color={textSec} />
+                  <Text style={[ss.actionBtnLabel, { color: textSec, fontFamily: "Tajawal_500Medium" }]}>
+                    إعادة فحص التوفر
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <View style={[ss.actionBtn, { backgroundColor: addAlpha("#9CA3AF", 0.08) }]}>
+                <Feather name="info" size={14} color={textSec} />
+                <Text style={[ss.actionBtnLabel, { color: textSec, fontFamily: "Tajawal_400Regular" }]}>
+                  {Platform.OS === "ios" ? "HealthKit سيُفعَّل في إصدار قادم" : "يعمل على Android فقط"}
+                </Text>
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -567,6 +730,20 @@ const ss = StyleSheet.create({
     overflow: "hidden",
     marginBottom: 4,
   },
+
+  // HC message row
+  hcMsgRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    marginHorizontal: Spacing.md,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    gap: 6,
+  },
+  hcMsgText: { flex: 1, fontSize: 12, textAlign: "right" },
 
   // Connection status
   statusRow: {

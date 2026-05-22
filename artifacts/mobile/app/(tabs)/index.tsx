@@ -832,6 +832,7 @@ export default function HomeScreen() {
       <HealthPermissionModal
         visible={permModalVisible}
         onClose={() => setPermModalVisible(false)}
+        onConnect={retryHealth}
       />
     </SafeAreaView>
   );
