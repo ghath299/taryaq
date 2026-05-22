@@ -68,7 +68,8 @@ const INITIAL_NOTIFICATIONS: TaryaqNotification[] = [
   },
 ];
 
-if (Platform.OS !== "web" && !isExpoGo) {
+// setNotificationHandler يعمل في Expo Go أيضاً — فقط Push Tokens هي من تحتاج Development Build
+if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -140,7 +141,8 @@ export function useNotificationSetup() {
   const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
 
   useEffect(() => {
-    if (Platform.OS === "web" || isExpoGo) return;
+    // addNotificationReceivedListener آمن في Expo Go — فقط Push Token registration يحتاج Development Build
+    if (Platform.OS === "web") return;
     notifListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
       const newNotif: TaryaqNotification = {
         id: Date.now().toString(),
