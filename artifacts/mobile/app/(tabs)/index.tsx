@@ -546,15 +546,25 @@ export default function HomeScreen() {
           >
             {/* Header */}
             <View style={[styles.healthHeader, { justifyContent: "space-between" }]}>
-              <Pressable
-                onPress={() => setPermModalVisible(true)}
-                style={[styles.connectBtn, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}
-              >
-                <Feather name="link" size={11} color={BRAND_BLUE_DEEP} />
-                <ThemedText type="caption" style={{ color: BRAND_BLUE_DEEP, fontSize: 11, fontWeight: "600" }}>
-                  {healthData?.isConnected ? "مرتبط" : "ربط الساعة"}
-                </ThemedText>
-              </Pressable>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Pressable
+                  onPress={() => router.push("/health-settings")}
+                  style={[styles.settingsIconBtn, { backgroundColor: addAlpha(textSecondary, 0.1) }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="إعدادات الصحة"
+                >
+                  <Feather name="settings" size={13} color={textSecondary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => setPermModalVisible(true)}
+                  style={[styles.connectBtn, { backgroundColor: addAlpha(BRAND_BLUE_DEEP, 0.1) }]}
+                >
+                  <Feather name="link" size={11} color={BRAND_BLUE_DEEP} />
+                  <ThemedText type="caption" style={{ color: BRAND_BLUE_DEEP, fontSize: 11, fontWeight: "600" }}>
+                    {healthData?.isConnected ? "مرتبط" : "ربط الساعة"}
+                  </ThemedText>
+                </Pressable>
+              </View>
               <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 6 }}>
                 <Animated.View style={heartPulseStyle}>
                   <Feather name="heart" size={15} color={BRAND_BLUE_DEEP} />
@@ -1164,6 +1174,13 @@ const styles = StyleSheet.create({
   healthBarFill: {
     height: "100%",
     borderRadius: 2,
+  },
+  settingsIconBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   connectBtn: {
     flexDirection: "row-reverse",

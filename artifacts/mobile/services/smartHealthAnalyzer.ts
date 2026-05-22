@@ -3,25 +3,35 @@
 // المستخدم: لاحظنا / قد يساعدك / راقب حالتك
 
 import type { HealthSummary, ActivityLevel, HeartRateStatus, BPStatus } from "./healthDataService";
+import type { HealthGoals } from "./healthSettingsService";
+import { DEFAULT_GOALS } from "./healthSettingsService";
 
 // ── النصيحة الذكية ────────────────────────────────────────────────────────────
-export function getSmartHealthTip(data: HealthSummary): string {
+// تقبل goals اختيارياً — تُستخدم بدل القيم الثابتة
+export function getSmartHealthTip(data: HealthSummary, goals?: HealthGoals): string {
+  const g: HealthGoals = { ...DEFAULT_GOALS, ...goals };
   const candidates: string[] = [];
 
-  // النوم
+  // النوم — مقارنة بهدف المستخدم
   if (data.sleep.hours !== null) {
-    if (data.sleep.hours < 5.5) {
+    const criticalSleep = g.sleepGoal * 0.65;  // أقل من 65% من الهدف = منخفض جداً
+    const lowSleep = g.sleepGoal * 0.875;       // أقل من 87.5% = يحتاج انتباهاً
+    if (data.sleep.hours < criticalSleep) {
       candidates.push("نومك كان أقل من المعتاد. حاول تنظيم وقت نومك الليلة لتشعر بطاقة أفضل.");
-    } else if (data.sleep.hours < 7 || data.sleep.quality === "poor") {
+    } else if (data.sleep.hours < lowSleep || data.sleep.quality === "poor") {
       candidates.push("جودة نومك تحتاج تحسيناً. ابتعد عن الشاشات قبل النوم بساعة وستلاحظ فرقاً.");
     }
   }
 
-  // النشاط والخطوات
+  // النشاط والخطوات — مقارنة بهدف الخطوات والنشاط
   if (data.activity.level === "low") {
     candidates.push("نشاطك اليوم أقل من المعتاد. المشي لدقائق بسيطة قد يساعدك على الشعور بنشاط أكبر.");
-  } else if (data.activity.steps !== null && data.activity.steps < 3000) {
+  } else if (data.activity.steps !== null && data.activity.steps < g.stepsGoal * 0.5) {
+    // أقل من 50% من هدف الخطوات
     candidates.push("خطواتك اليوم قليلة. حاول التحرك أكثر ولو لمسافات قصيرة بين المهام.");
+  } else if (data.activity.steps !== null && data.activity.steps < g.stepsGoal * 0.75) {
+    // بين 50% و 75% من الهدف
+    candidates.push(`أنت على بُعد ${(g.stepsGoal - data.activity.steps).toLocaleString("ar")} خطوة من هدفك اليومي. تحرّك قليلاً!`);
   }
 
   // نبض القلب
