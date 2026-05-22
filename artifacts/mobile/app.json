@@ -1,15 +1,15 @@
 {
   "expo": {
     "name": "ترياق",
-    "slug": "mobile",
+    "slug": "workspace",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon2.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "./assets/images/icon2.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D1117"
     },
@@ -21,13 +21,11 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
-        "LSApplicationQueriesSchemes": [
-          "baly",
-          "waze"
-        ]
+        "LSApplicationQueriesSchemes": ["baly", "waze"]
       }
     },
     "android": {
+      "package": "com.taryaq.app",
       "config": {
         "googleMaps": {
           "apiKey": ""
@@ -38,52 +36,15 @@
         "ACCESS_COARSE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE"
-      ],
-      "queries": [
-        {
-          "package": "app.baly.passenger"
-        },
-        {
-          "package": "com.waze"
-        },
-        {
-          "intent": [
-            {
-              "action": "android.intent.action.VIEW",
-              "data": [
-                {
-                  "scheme": "baly"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "intent": [
-            {
-              "action": "android.intent.action.VIEW",
-              "data": [
-                {
-                  "scheme": "waze"
-                }
-              ]
-            }
-          ]
-        }
       ]
     },
     "web": {
-      "favicon": "./assets/images/icon.png",
+      "favicon": "./assets/images/icon2.png",
       "bundler": "metro",
       "output": "single"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      ["expo-router", { "origin": "https://replit.com/" }],
       "expo-font",
       "expo-web-browser",
       [
@@ -95,7 +56,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/icon2.png",
           "color": "#5EDFFF",
           "sounds": []
         }
@@ -105,6 +66,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "dd439c51-50a6-4f27-b1cf-873da66913a0"
+      }
     }
   }
 }
