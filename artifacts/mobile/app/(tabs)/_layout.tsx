@@ -1,12 +1,18 @@
 import { BlurView } from "expo-blur";
-import { Tabs, router } from "expo-router";
+import { Tabs } from "expo-router";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useRef, useEffect } from "react";
-import { Platform, StyleSheet, View, Pressable, Animated } from "react-native";
+import { Platform, StyleSheet, View, Pressable } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  interpolate,
+} from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
-// الترتيب بالشريط: الأطباء | الرئيسية (FAB) | علاج وصيدلية
+// ─── تعريف التابس ─────────────────────────────────────────────────────────────
 const TABS = [
   {
     name: "doctors",
@@ -29,7 +35,7 @@ const TABS = [
   },
 ];
 
-// مكوّن الأيقونة — يختار بين Feather و MaterialCommunityIcons
+// ─── مكوّن الأيقونة ────────────────────────────────────────────────────────────
 function TabIcon({
   iconSet,
   icon,
@@ -41,42 +47,132 @@ function TabIcon({
   size: number;
   color: string;
 }) {
-  if (iconSet === "mci") {
+  if (iconSet === "mci")
     return (
       <MaterialCommunityIcons name={icon as any} size={size} color={color} />
     );
-  }
   return <Feather name={icon as any} size={size} color={color} />;
 }
 
-function CustomTabBar({ state }: BottomTabBarProps) {
+// ─── Pill Item (الأطباء / علاج وصيدلية) ──────────────────────────────────────
+function PillTab({ tab, active, onPress, theme, isDark }: any) {
+  const progress = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withSpring(active ? 1 : 0, {
+      mass: 0.5,
+      damping: 12,
+      stiffness: 180,
+    });
+  }, [active]);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    backgroundColor: isDark
+      ? `rgba(45,42,74,${progress.value})`
+      : `rgba(237,233,254,${progress.value})`,
+    paddingHorizontal: interpolate(progress.value, [0, 1], [12, 14]),
+  }));
+
+  const textStyle = useAnimatedStyle(() => ({
+    maxWidth: interpolate(progress.value, [0, 1], [0, 82]),
+    opacity: interpolate(progress.value, [0, 0.6, 1], [0, 0, 1]),
+  }));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}
+    >
+      <Animated.View style={[styles.pill, pillStyle]}>
+        <TabIcon
+          iconSet={tab.iconSet}
+          icon={tab.icon}
+          size={21}
+          color={active ? theme.primary : theme.tabIconDefault}
+        />
+        <Animated.View style={[{ overflow: "hidden" }, textStyle]}>
+          <Animated.Text
+            style={[styles.pillLabel, { color: theme.primary }]}
+            numberOfLines={1}
+          >
+            {tab.label}
+          </Animated.Text>
+        </Animated.View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─── FAB (الرئيسية) ────────────────────────────────────────────────────────────
+function FabTab({ tab, active, onPress, theme }: any) {
+  const progress = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withSpring(active ? 1 : 0, {
+      mass: 0.5,
+      damping: 12,
+      stiffness: 180,
+    });
+  }, [active]);
+
+  const fabStyle = useAnimatedStyle(() => ({
+    width: interpolate(progress.value, [0, 1], [54, 132]),
+  }));
+
+  const textStyle = useAnimatedStyle(() => ({
+    maxWidth: interpolate(progress.value, [0, 1], [0, 68]),
+    opacity: interpolate(progress.value, [0, 0.6, 1], [0, 0, 1]),
+  }));
+
+  return (
+    <View style={styles.fabWrap}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      >
+        <Animated.View
+          style={[styles.fab, fabStyle, { backgroundColor: theme.primary }]}
+        >
+          <TabIcon
+            iconSet={tab.iconSet}
+            icon={tab.icon}
+            size={23}
+            color="#fff"
+          />
+          <Animated.View style={[{ overflow: "hidden" }, textStyle]}>
+            <Animated.Text style={styles.fabLabel} numberOfLines={1}>
+              {tab.label}
+            </Animated.Text>
+          </Animated.View>
+        </Animated.View>
+      </Pressable>
+    </View>
+  );
+}
+
+// ─── Custom Tab Bar ────────────────────────────────────────────────────────────
+function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const { theme, isDark } = useTheme();
   const isIOS = Platform.OS === "ios";
 
   const getIdx = (name: string) =>
     state.routes.findIndex((r) => r.name === name);
 
-  const animMap = useRef<Record<string, Animated.Value>>({});
-  TABS.forEach((tab) => {
-    if (!animMap.current[tab.name]) {
-      const idx = getIdx(tab.name);
-      animMap.current[tab.name] = new Animated.Value(
-        idx === state.index ? 1 : 0,
-      );
-    }
-  });
-
-  useEffect(() => {
-    TABS.forEach((tab) => {
-      const idx = getIdx(tab.name);
-      Animated.spring(animMap.current[tab.name], {
-        toValue: idx === state.index ? 1 : 0,
-        useNativeDriver: false,
-        tension: 120,
-        friction: 10,
-      }).start();
+  const navigateTo = (tabName: string) => {
+    const route = state.routes.find((r) => r.name === tabName);
+    if (!route) return;
+    const isFocused = state.routes[state.index]?.name === tabName;
+    const event = navigation.emit({
+      type: "tabPress",
+      target: route.key,
+      canPreventDefault: true,
     });
-  }, [state.index]);
+    if (!isFocused && !event.defaultPrevented) {
+      navigation.navigate(tabName, undefined);
+    }
+  };
 
   const barBg = isIOS ? "transparent" : isDark ? theme.card : "#FFFFFF";
 
@@ -94,108 +190,29 @@ function CustomTabBar({ state }: BottomTabBarProps) {
           style={StyleSheet.absoluteFill}
         />
       )}
-
       <View style={styles.row}>
         {TABS.map((tab) => {
-          const idx = getIdx(tab.name);
-          const active = idx === state.index;
-          const anim = animMap.current[tab.name];
-
-          // ── FAB (الرئيسية) ────────────────────────────────────────────────
+          const active = getIdx(tab.name) === state.index;
           if (tab.fab) {
-            const fabWidth = anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [52, 130],
-            });
-            const textOpacity = anim.interpolate({
-              inputRange: [0, 0.6, 1],
-              outputRange: [0, 0, 1],
-            });
-            const textWidth = anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 66],
-            });
-
             return (
-              <View key={tab.name} style={styles.fabWrap}>
-                <Pressable
-                  onPress={() => router.navigate(tab.name as any)}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
-                >
-                  <Animated.View
-                    style={[
-                      styles.fab,
-                      { width: fabWidth, backgroundColor: theme.primary },
-                    ]}
-                  >
-                    <TabIcon
-                      iconSet={tab.iconSet}
-                      icon={tab.icon}
-                      size={22}
-                      color="#fff"
-                    />
-                    <View style={{ overflow: "hidden" }}>
-                      <Animated.View style={{ width: textWidth }}>
-                        <Animated.Text
-                          style={[styles.fabLabel, { opacity: textOpacity }]}
-                          numberOfLines={1}
-                        >
-                          {tab.label}
-                        </Animated.Text>
-                      </Animated.View>
-                    </View>
-                  </Animated.View>
-                </Pressable>
-              </View>
+              <FabTab
+                key={tab.name}
+                tab={tab}
+                active={active}
+                onPress={() => navigateTo(tab.name)}
+                theme={theme}
+              />
             );
           }
-
-          // ── Pill عادي ─────────────────────────────────────────────────────
-          const pillBg = anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [
-              "rgba(0,0,0,0)",
-              isDark ? "rgba(45,42,74,1)" : "rgba(237,233,254,1)",
-            ],
-          });
-          const textOpacity = anim.interpolate({
-            inputRange: [0, 0.6, 1],
-            outputRange: [0, 0, 1],
-          });
-          const textWidth = anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 78],
-          });
-
           return (
-            <Pressable
+            <PillTab
               key={tab.name}
-              onPress={() => router.navigate(tab.name as any)}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <Animated.View style={[styles.pill, { backgroundColor: pillBg }]}>
-                <TabIcon
-                  iconSet={tab.iconSet}
-                  icon={tab.icon}
-                  size={21}
-                  color={active ? theme.primary : theme.tabIconDefault}
-                />
-                {/* overflow منفصل حتى ما يمنع اللمس */}
-                <View style={{ overflow: "hidden" }}>
-                  <Animated.View style={{ width: textWidth }}>
-                    <Animated.Text
-                      style={[
-                        styles.pillLabel,
-                        { opacity: textOpacity, color: theme.primary },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {tab.label}
-                    </Animated.Text>
-                  </Animated.View>
-                </View>
-              </Animated.View>
-            </Pressable>
+              tab={tab}
+              active={active}
+              onPress={() => navigateTo(tab.name)}
+              theme={theme}
+              isDark={isDark}
+            />
           );
         })}
       </View>
@@ -203,6 +220,7 @@ function CustomTabBar({ state }: BottomTabBarProps) {
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   bar: {
     position: "absolute",
@@ -217,21 +235,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
     paddingTop: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
   },
-
-  // FAB
   fabWrap: {
     alignItems: "center",
-    marginTop: -18,
+    marginTop: -20,
   },
   fab: {
-    height: 54,
-    borderRadius: 27,
+    height: 56,
+    borderRadius: 28,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7, // ← المسافة بين الأيقونة والنص
+    gap: 7,
     paddingHorizontal: 16,
     overflow: "hidden",
   },
@@ -241,15 +257,13 @@ const styles = StyleSheet.create({
     fontFamily: "Cairo-Regular",
     fontWeight: "600",
   },
-
-  // Pill
   pill: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 22,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 6, // ← المسافة بين الأيقونة والنص
+    gap: 6,
+    overflow: "hidden",
   },
   pillLabel: {
     fontSize: 11,
@@ -258,6 +272,7 @@ const styles = StyleSheet.create({
   },
 });
 
+// ─── Layout الرئيسي ────────────────────────────────────────────────────────────
 export default function TabLayout() {
   const { theme, isDark } = useTheme();
   const isIOS = Platform.OS === "ios";
@@ -278,10 +293,7 @@ export default function TabLayout() {
         headerStatusBarHeight: isWeb ? 50 : undefined,
         headerTransparent: isIOS,
         headerTintColor: theme.text,
-        headerTitleStyle: {
-          fontFamily: "Cairo-Regular",
-          fontSize: 18,
-        },
+        headerTitleStyle: { fontFamily: "Cairo-Regular", fontSize: 18 },
       }}
     >
       <Tabs.Screen
