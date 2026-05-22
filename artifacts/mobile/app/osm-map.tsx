@@ -13,6 +13,7 @@
                              import * as Location from "expo-location";
                              import { Feather } from "@expo/vector-icons";
                              import { ThemedText } from "@/components/ThemedText";
+import MapView, { Marker, Polyline, Polygon } from "react-native-maps";
 
                              // ═══════════════════════════════════════════
                              // الإعدادات — حط التوكن في Replit Secrets
@@ -374,7 +375,7 @@
                              function NativeMap({
                                mapRef,
                                coords,
-                               isDark,
+                               isDark: _isDark,
                                govBoundary,
                                isNavigating,
                                routeCoords,
@@ -394,113 +395,51 @@
                                pharmacies: Pharmacy[];
                                onSelectPharmacy: (id: string) => void;
                              }) {
-                               let Mapbox: any = null;
-                               try {
-                                 const _mod = "@rnmapbox/maps"; Mapbox = require(_mod);
-                                 Mapbox.default.setAccessToken(MAPBOX_TOKEN);
-                               } catch {
-                                 return (
-                                   <View style={[StyleSheet.absoluteFill, styles.fallback]}>
-                                     <ActivityIndicator color={ACCENT} />
-                                     <Text style={{ color: "#fff", marginTop: 8 }}>جاري تحميل الخريطة…</Text>
-                                   </View>
-                                 );
-                               }
-
-                               const { MapView, Camera, UserLocation, ShapeSource, LineLayer, FillLayer, CircleLayer, SymbolLayer } = Mapbox;
-                               const center = coords ? [coords.longitude, coords.latitude] : [DEFAULT_LNG, DEFAULT_LAT];
-
-                               const routeGeoJSON = routeCoords.length >= 2 ? {
-                                 type: "Feature",
-                                 geometry: { type: "LineString", coordinates: routeCoords.map((c) => [c.longitude, c.latitude]) },
-                               } : null;
-
-                               const boundaryGeoJSON = govBoundary && govBoundary.length > 0 ? {
-                                 type: "Feature",
-                                 geometry: { type: "Polygon", coordinates: [govBoundary.map((c) => [c.longitude, c.latitude])] },
-                               } : null;
-
-                               const pharmaciesGeoJSON = {
-                                 type: "FeatureCollection",
-                                 features: pharmacies.map((p) => ({
-                                   type: "Feature",
-                                   properties: { id: p.id, name: p.name, isOpen: p.isOpen },
-                                   geometry: { type: "Point", coordinates: [p.longitude, p.latitude] },
-                                 })),
-                               };
-
-                               const destGeoJSON = destination ? {
-                                 type: "Feature",
-                                 geometry: { type: "Point", coordinates: [destination.longitude, destination.latitude] },
-                               } : null;
-
+                               const center = coords ?? { latitude: DEFAULT_LAT, longitude: DEFAULT_LNG };
+                               const delta = isNavigating ? 0.003 : 0.05;
                                return (
                                  <MapView
                                    ref={mapRef}
                                    style={StyleSheet.absoluteFill}
-                                   styleURL={MAPBOX_STYLE}
-                                   logoEnabled={false}
-                                   attributionEnabled={false}
-                                   compassEnabled={!isNavigating}
-                                   scaleBarEnabled={false}
+                                   showsUserLocation
+                                   showsMyLocationButton={false}
+                                   showsCompass={!isNavigating}
+                                   showsScale={false}
+                                   region={{
+                                     latitude: center.latitude,
+                                     longitude: center.longitude,
+                                     latitudeDelta: delta,
+                                     longitudeDelta: delta,
+                                   }}
                                  >
-                                   <Camera
-                                     zoomLevel={isNavigating ? 17.2 : 13.2}
-                                     pitch={isNavigating ? 58 : 22}
-                                     heading={isNavigating ? heading : 0}
-                                     centerCoordinate={center}
-                                     animationMode="easeTo"
-                                     animationDuration={900}
-                                   />
-
-                                   <UserLocation visible={true} renderMode="native" showsUserHeadingIndicator={true} />
-
-                                   {boundaryGeoJSON ? (
-                                     <ShapeSource id="govSource" shape={boundaryGeoJSON as any}>
-                                       <FillLayer id="govFill" style={{ fillColor: ACCENT, fillOpacity: isDark ? 0.05 : 0.04 }} />
-                                       <LineLayer id="govLine" style={{ lineColor: ACCENT, lineWidth: 2, lineOpacity: 0.55 }} />
-                                     </ShapeSource>
-                                   ) : null}
-
-                                   <ShapeSource
-                                     id="pharmaciesSource"
-                                     shape={pharmaciesGeoJSON as any}
-                                     onPress={(e: any) => {
-                                       const id = e?.features?.[0]?.properties?.id;
-                                       if (id) onSelectPharmacy(id);
-                                     }}
-                                   >
-                                     <CircleLayer id="pharmacyHalo" style={{ circleRadius: 18, circleColor: ACCENT, circleOpacity: 0.14 }} />
-                                     <CircleLayer id="pharmacyDot" style={{ circleRadius: 7, circleColor: "#EFFFFF", circleStrokeColor: ACCENT, circleStrokeWidth: 3 }} />
-                                     <SymbolLayer
-                                       id="pharmacyLabels"
-                                       style={{
-                                         textField: ["get", "name"],
-                                         textSize: 12,
-                                         textColor: "#FFFFFF",
-                                         textHaloColor: "#07111F",
-                                         textHaloWidth: 1.5,
-                                         textOffset: [0, 1.5],
-                                         textAnchor: "top",
-                                       }}
+                                   {govBoundary && govBoundary.length > 0 && (
+                                     <Polygon
+                                       coordinates={govBoundary}
+                                       strokeColor={ACCENT}
+                                       fillColor="rgba(34,211,238,0.05)"
+                                       strokeWidth={2}
                                      />
-                                   </ShapeSource>
-
-                                   {routeGeoJSON ? (
-                                     <ShapeSource id="routeSource" shape={routeGeoJSON as any}>
-                                       <LineLayer id="routeGlow" style={{ lineColor: ACCENT, lineWidth: 18, lineOpacity: 0.18, lineCap: "round", lineJoin: "round" }} />
-                                       <LineLayer id="routeShadow" style={{ lineColor: "#020617", lineWidth: 11, lineOpacity: 0.75, lineCap: "round", lineJoin: "round" }} />
-                                       <LineLayer id="routeMain" style={{ lineColor: ACCENT, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
-                                       <LineLayer id="routeInner" style={{ lineColor: "#ECFEFF", lineWidth: 2.2, lineOpacity: 0.8, lineCap: "round", lineJoin: "round" }} />
-                                     </ShapeSource>
-                                   ) : null}
-
-                                   {destGeoJSON ? (
-                                     <ShapeSource id="destSource" shape={destGeoJSON as any}>
-                                       <CircleLayer id="destHalo" style={{ circleRadius: 20, circleColor: "#F97316", circleOpacity: 0.18 }} />
-                                       <CircleLayer id="destCircle" style={{ circleRadius: 9, circleColor: "#F97316", circleStrokeColor: "#fff", circleStrokeWidth: 3 }} />
-                                     </ShapeSource>
-                                   ) : null}
+                                   )}
+                                   {routeCoords.length >= 2 && (
+                                     <>
+                                       <Polyline coordinates={routeCoords} strokeColor="rgba(34,211,238,0.18)" strokeWidth={18} />
+                                       <Polyline coordinates={routeCoords} strokeColor="#020617" strokeWidth={11} />
+                                       <Polyline coordinates={routeCoords} strokeColor={ACCENT} strokeWidth={7} />
+                                       <Polyline coordinates={routeCoords} strokeColor="#ECFEFF" strokeWidth={2.5} />
+                                     </>
+                                   )}
+                                   {pharmacies.map((p) => (
+                                     <Marker
+                                       key={p.id}
+                                       coordinate={{ latitude: p.latitude, longitude: p.longitude }}
+                                       title={p.name}
+                                       pinColor={p.isOpen ? ACCENT : "#94A3B8"}
+                                       onPress={() => onSelectPharmacy(p.id)}
+                                     />
+                                   ))}
+                                   {destination && (
+                                     <Marker coordinate={destination} pinColor="#F97316" />
+                                   )}
                                  </MapView>
                                );
                              }

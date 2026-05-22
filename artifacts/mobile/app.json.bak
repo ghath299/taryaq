@@ -21,10 +21,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "نستخدم موقعك لعرض أقرب الأطباء والصيدليات إليك",
-        "LSApplicationQueriesSchemes": [
-          "baly",
-          "waze"
-        ]
+        "LSApplicationQueriesSchemes": ["baly", "waze"]
       }
     },
     "android": {
@@ -55,12 +52,7 @@
       "output": "single"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      ["expo-router", { "origin": "https://replit.com/" }],
       "expo-font",
       "expo-web-browser",
       [
@@ -84,7 +76,7 @@
         {
           "android": {
             "minSdkVersion": 26,
-            "compileSdkVersion": 36,
+            "compileSdkVersion": 35,
             "targetSdkVersion": 35
           }
         }
@@ -95,7 +87,9 @@
       "reactCompiler": true
     },
     "extra": {
-      "eas": {}
+      "eas": {
+        "projectId": "dd439c51-50a6-4f27-b1cf-873da66913a0"
+      }
     }
   }
 }
