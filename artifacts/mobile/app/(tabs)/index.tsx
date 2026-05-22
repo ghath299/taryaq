@@ -171,24 +171,14 @@ export default function HomeScreen() {
                 {" 👋"}
               </ThemedText>
             </View>
-            <Pressable
-              onPress={() => router.push("/(tabs)/doctors" as never)}
-              style={styles.greetingSubRow}
-              accessibilityRole="button"
-              accessibilityLabel="كيف صحتك اليوم"
-            >
+            <View style={styles.greetingSubRow}>
               <ThemedText
                 type="small"
                 style={{ color: textSecondary, marginLeft: 2 }}
               >
                 كيف صحتك اليوم؟
               </ThemedText>
-              <Feather
-                name="chevron-left"
-                size={14}
-                color={textSecondary}
-              />
-            </Pressable>
+            </View>
           </View>
 
           <View style={styles.bellWrap}>
