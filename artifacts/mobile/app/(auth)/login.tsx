@@ -37,14 +37,25 @@ export default function LoginScreen() {
     return "";
   };
 
+  const formatToE164 = (phone: string): string => {
+    const trimmed = phone.trim();
+    // تحويل الرقم العراقي من صيغة 07XXXXXXXX إلى +964XXXXXXXXX
+    if (trimmed.startsWith("0")) {
+      return "+964" + trimmed.slice(1);
+    }
+    return trimmed;
+  };
+
   const handleSubmit = async () => {
     const error = validatePhone(phoneNumber);
     setPhoneError(error);
     if (error) return;
 
+    const formattedPhone = formatToE164(phoneNumber);
+
     setIsLoading(true);
     try {
-      await login("", phoneNumber.trim(), website);
+      await login("", formattedPhone, website);
       router.replace("/(auth)/location");
     } catch {
       Alert.alert("خطأ", "حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى.");

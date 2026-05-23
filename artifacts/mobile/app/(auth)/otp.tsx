@@ -31,6 +31,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, addAlpha } from "@/constants/colors";
 import { logger } from "@/lib/logger";
 
+// ملاحظة مهمة لإعداد Firebase Phone Auth على الأجهزة الحقيقية:
+// يجب تحديث ملف google-services.json بإضافة بصمة SHA-1 الصحيحة من EAS credentials.
+// للحصول على بصمة SHA-1: شغّل الأمر `eas credentials` واختر Android.
+// أضف البصمة في Firebase Console → Project Settings → Your Apps → SHA certificate fingerprints.
+// ثم أعد تحميل google-services.json ووضعه في مجلد artifacts/mobile.
+// تأكد أيضاً من إرسال رقم الهاتف بالصيغة الكاملة: +964XXXXXXXXX وليس 07XXXXXXXX.
+
 const OTP_LENGTH = 6;
 
 const INITIAL_COOLDOWN_MS = 60_000;
@@ -381,6 +388,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
+    // إجبار اتجاه LTR لأن التخطيط العربي RTL يعكس ترتيب الصناديق
+    // الصندوق الأول يجب أن يكون على اليسار والتركيز ينتقل من اليسار إلى اليمين
+    direction: "ltr",
+    writingDirection: "ltr",
   },
   otpInput: {
     width: 48,
