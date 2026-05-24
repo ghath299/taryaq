@@ -28,7 +28,7 @@ const TABS = [
     fab: true,
   },
   {
-    name: "medicines",
+    name: "medicine-search",
     label: "علاج وصيدلية",
     iconSet: "mci" as const,
     icon: "pill",

@@ -1,0 +1,100 @@
+عندي مشكلة في شريط التنقل السفلي Bottom Tabs.
+
+المشكلة:
+أزرار "الرئيسية" و "الأطباء" تتفاعل بشكل صحيح:
+- يتغير لون الأيقونة والنص
+- يبين أن المستخدم داخل هذه الواجهة
+
+لكن زر "العلاجات والصيدليات" عند الضغط عليه:
+- يفتح الواجهة أو يحاول يفتحها
+- لكن لا يتغير لون الزر
+- لا يظهر أنه active/current tab
+- لا يتفاعل مثل باقي الأزرار
+
+المطلوب:
+لا تغيّر تصميم التطبيق.
+لا تغيّر Firebase أو OTP.
+لا تغيّر Health Connect.
+لا تغيّر منطق الشاشات.
+لا تحذف أي route.
+فقط أصلح تفاعل زر "العلاجات والصيدليات" في Bottom Tabs.
+
+الخطوات المطلوبة:
+
+1. افحص ملفات التبويبات:
+- app/(tabs)/_layout.tsx
+- app/(tabs)/index.tsx
+- أي ملف خاص بالأطباء
+- أي ملف خاص بالعلاجات والصيدليات
+- أي component مخصص للـ BottomTabBar إن وجد
+
+2. حدد اسم route الحقيقي لشاشة "العلاجات والصيدليات".
+ابحث عن ملفات مثل:
+- medicines.tsx
+- pharmacies.tsx
+- medications.tsx
+- treatments.tsx
+- medicine-pharmacies.tsx
+- pharmacy.tsx
+- drugs.tsx
+
+3. تأكد أن اسم التبويب في _layout.tsx يطابق اسم الملف بالضبط.
+مثال:
+إذا الملف:
+app/(tabs)/medicines.tsx
+
+يجب أن يكون:
+<Tabs.Screen name="medicines" ... />
+
+وليس:
+name="medicine"
+أو
+name="pharmacies"
+أو أي اسم مختلف.
+
+4. إذا يوجد tabBarIcon:
+تأكد أنه يستخدم focused/color من Expo Router/React Navigation بشكل صحيح.
+
+مثال:
+tabBarIcon: ({ color, focused }) => (
+  <Icon
+    name="..."
+    color={color}
+    size={focused ? 26 : 24}
+  />
+)
+
+5. لا تستخدم لون ثابت للأيقونة أو النص داخل زر العلاجات والصيدليات.
+ممنوع:
+color: "#94A3B8"
+أو
+color: "white"
+بشكل ثابت داخل tabBarIcon
+
+لازم يعتمد على color/focused مثل باقي الأزرار.
+
+6. إذا يوجد custom tab button:
+تأكد أن onPress يعمل navigation للـ route الصحيح.
+وتأكد أن active state يعتمد على:
+state.index === index
+أو
+route.name === currentRouteName
+
+7. إذا زر "العلاجات والصيدليات" يفتح شاشة خارج (tabs)، انقله أو اربطه صح حتى يكون داخل Bottom Tabs.
+لأن إذا الشاشة خارج (tabs)، الزر ما راح يبقى active.
+
+8. أصلح المشكلة بأقل تعديل ممكن.
+لا تغيّر تصميم باقي الأزرار.
+خلي تفاعل "العلاجات والصيدليات" مثل:
+- الرئيسية
+- الأطباء
+
+9. بعد الإصلاح شغّل:
+pnpm exec tsc --noEmit
+
+10. أعطني تقرير:
+- أين كان الخطأ؟
+- ما اسم route الصحيح؟
+- ما الملفات التي عدلتها؟
+- هل زر العلاجات والصيدليات صار يتغير لونه عند الضغط؟
+- هل TypeScript = 0؟
