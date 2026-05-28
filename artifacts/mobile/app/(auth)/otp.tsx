@@ -66,7 +66,12 @@ export default function OTPScreen() {
   const inputs = useRef<Array<TextInput | null>>(Array(OTP_LENGTH).fill(null));
   const shakeX = useSharedValue(0);
 
-  const displayPhone = (user?.phoneNumber || pendingPhone || "").replace(
+  const rawPhone = user?.phoneNumber || pendingPhone || "";
+  let cleanPhone = rawPhone.replace(/\D/g, "");
+  if (cleanPhone.startsWith("964")) {
+    cleanPhone = "0" + cleanPhone.slice(3);
+  }
+  const displayPhone = cleanPhone.replace(
     /(\d{4})(\d{3})(\d{4})/,
     "$1 $2 $3",
   );
@@ -91,6 +96,22 @@ export default function OTPScreen() {
         if (active) logger.warn("[OTP] allowScreenCapture failed:", err);
       });
     };
+  }, []);
+
+  useEffect(() => {
+    // Automatically trigger OTP sending when the OTP screen mounts and container is ready
+    const triggerInitialOTP = async () => {
+      try {
+        setIsLoading(true);
+        setErrorMsg("");
+        await resendOTP();
+      } catch (err) {
+        logger.error("[OTP] Initial send failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    triggerInitialOTP();
   }, []);
 
   const shakeStyle = useAnimatedStyle(() => ({

@@ -17,7 +17,15 @@ function init(): void {
     return;
   }
   try {
-    const parsed = JSON.parse(raw) as {
+    let clean = raw.trim();
+    if (clean.startsWith('"') && clean.endsWith('"')) {
+      clean = clean.substring(1, clean.length - 1);
+    }
+    clean = clean.replace(/\\"/g, '"');
+    clean = clean.replace(/\\\n/g, '\\n');
+    clean = clean.replace(/\\\r\n/g, '\\n');
+
+    const parsed = JSON.parse(clean) as {
       project_id: string;
       private_key: string;
       client_email: string;

@@ -33,17 +33,13 @@ export default function LoginScreen() {
   const [phoneError, setPhoneError] = useState("");
 
   const validatePhone = (value: string) => {
-    if (!/^07[3-9]\d{8}$/.test(value)) return "رقم الهاتف غير صحيح";
+    if (!/^7\d{9}$/.test(value)) return "رقم الهاتف غير صحيح";
     return "";
   };
 
   const formatToE164 = (phone: string): string => {
     const trimmed = phone.trim();
-    // تحويل الرقم العراقي من صيغة 07XXXXXXXX إلى +964XXXXXXXXX
-    if (trimmed.startsWith("0")) {
-      return "+964" + trimmed.slice(1);
-    }
-    return trimmed;
+    return "+964" + trimmed;
   };
 
   const handleSubmit = async () => {
@@ -149,7 +145,7 @@ export default function LoginScreen() {
                   placeholder="رقم الهاتف"
                   placeholderTextColor={isDark ? "#6C757D" : "#A0A8B5"}
                   keyboardType="phone-pad"
-                  maxLength={11}
+                  maxLength={10}
                   returnKeyType="done"
                   onSubmitEditing={handleSubmit}
                   style={[

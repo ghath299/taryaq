@@ -47,3 +47,16 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local Environment & Configurations
+.env
+.env.*
+.config/
+eas-cli-nodejs/
+
+# Test/QA scripts and custom utilities
+scripts/test-fb*
+artifacts/api-server/test-*.cjs
+ghath.bat
+ghath.ps1
+*.tar.gz
